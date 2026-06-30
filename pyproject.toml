@@ -1,0 +1,41 @@
+[project]
+name = "the-memory-palace"
+version = "0.1.0"
+description = "AI Murder-Mystery Game Master — A Death at Ravenwood Manor"
+requires-python = ">=3.11"
+dependencies = [
+    # cognee[anthropic] = Claude as internal LLM for graph extraction
+    # cognee[fastembed] = local CPU embeddings, no OpenAI key needed
+    "cognee[anthropic,fastembed]>=1.2.0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "websockets>=12.0",
+    "python-multipart>=0.0.9",
+    # anthropic SDK for GM narration (separate from Cognee's internal LLM usage)
+    "anthropic>=0.35.0",
+    "python-dotenv>=1.0.0",
+    "pydantic>=2.0.0",
+    "httpx>=0.27.0",
+    "tenacity>=8.3.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "rich>=13.0.0",
+]
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "rich>=13.0.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["game", "api", "scenario"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
