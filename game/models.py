@@ -1,4 +1,3 @@
-"""Pydantic models for game state. Will be updated after Phase 0 API verification."""
 from __future__ import annotations
 from pydantic import BaseModel, Field
 from typing import Literal
@@ -15,21 +14,20 @@ class NPC(BaseModel):
     alibi_is_true: bool
     known_facts: list[str] = Field(default_factory=list)
     lies_about: list[str] = Field(default_factory=list)
-    relationships: dict[str, str] = Field(default_factory=dict)  # npc_id → edge_type
+    relationships: dict[str, str] = Field(default_factory=dict)  
 
 
 class Clue(BaseModel):
     id: str
     description: str
     location: str
-    reveals: str  # what fact this clue supports
-
+    reveals: str  
 
 class GameState(BaseModel):
     session_id: str = Field(default_factory=lambda: str(uuid4()))
     current_room: str = "entrance_hall"
     player_learned_facts: list[str] = Field(default_factory=list)
-    npc_standings: dict[str, str] = Field(default_factory=dict)  # npc_id → stance
+    npc_standings: dict[str, str] = Field(default_factory=dict)  
     turn: int = 0
     accused: str | None = None
     game_over: bool = False
