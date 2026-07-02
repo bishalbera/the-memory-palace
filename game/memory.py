@@ -114,6 +114,35 @@ async def remember_fact_learned(fact_statement: str, source: str, session_id: st
         pass
 
 
+async def recall_accusation_evidence(accused_name: str, session_id: str) -> str:
+    """Pull everything the player has discovered specifically about the accused."""
+    try:
+        results = await cognee.recall(
+            query_text=f"evidence against {accused_name} motive means opportunity alibi",
+            datasets=[DATASET],
+            session_id=session_id,
+            only_context=True,
+        )
+        return _flatten(results)
+    except Exception:
+        return ""
+
+
+async def forget_cleared_suspect(npc_name: str, session_id: str) -> None:
+    """
+    After a false accusation, prune the red-herring thread for this suspect
+    from session memory so future recalls aren't polluted by dead ends.
+    Demonstrates cognee.forget() — the fourth pillar of the CRUD memory API.
+    """
+    try:
+        await cognee.forget(
+            text=f"Detective suspected {npc_name} of murder",
+            session_id=session_id,
+        )
+    except Exception:
+        pass  # forget failure must never crash the game
+
+
 async def remember_npc_event(
     npc_name: str,
     event_description: str,
