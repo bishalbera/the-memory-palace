@@ -237,6 +237,13 @@ async def _handle_talk(text: str, state: GameState) -> tuple[str, str | None]:
 
 
 async def _handle_search(target: str, state: GameState) -> tuple[str, None]:
+    # Auto-navigate if the search target names a room different from the current one.
+    # "examine the brandy glass in the study" should search the study, not the current room.
+    mentioned_room = gm.identify_room_in_input(target)
+    if mentioned_room and mentioned_room != state.current_room:
+        state.visited_rooms.add(mentioned_room)
+        state.current_room = mentioned_room
+
     loc = LOCATIONS_BY_ID.get(state.current_room)
     room_name = loc.name if loc else state.current_room
     room_ctx = await mem.recall_room(room_name, state.session_id)
@@ -350,13 +357,21 @@ async def _handle_accuse(name: str, state: GameState) -> tuple[str, str | None]:
     if not name:
         return "Whom do you wish to accuse? Type: ACCUSE [name]", None
 
+    # Same scoring as identify_npc_in_input: prefer longer full-name matches
+    # to avoid "Ashworth" matching Lady Victoria before Colonel Gerald.
     accused_id: str | None = None
     name_lower = name.lower()
+    best_score = 0
     for npc in NPCS_BY_ID.values():
-        if (name_lower in npc.name.lower() or
-                npc.name.split()[-1].lower() in name_lower):
+        npc_name_lower = npc.name.lower()
+        if npc_name_lower in name_lower:
+            score = 100 + len(npc_name_lower)
+        else:
+            tokens = [t for t in npc_name_lower.split() if len(t) > 3]
+            score = sum(1 for t in tokens if t in name_lower)
+        if score > best_score:
+            best_score = score
             accused_id = npc.id
-            break
 
     if not accused_id:
         return f"There is no suspect by the name '{name}'.", None
@@ -433,6 +448,90 @@ HELP_TEXT = """\
 
 
 # ── main loop ─────────────────────────────────────────────────────────────────
+
+# ── Web API interface (Phase 7) ────────────────────────────────────────────────
+
+@dataclass
+class TurnResult:
+    response: str
+    gossip: str | None
+    contradictions: list[str]
+    game_over: bool
+    improved: bool
+    turn: int
+    facts_count: int
+    total_facts: int
+    clues_count: int
+    total_clues: int
+    intent_type: str
+    is_free_action: bool = False
+
+
+async def process_turn(state: GameState, raw: str) -> TurnResult:
+    """
+    Process a single player input and return a structured TurnResult.
+    Used by the web backend — no stdin/stdout.
+    """
+    intent_type, remainder = _intent(raw)
+    is_free = intent_type in ("help", "notebook", "status", "quit")
+
+    if not is_free:
+        state.turn += 1
+
+    gossip_notice: str | None = None
+
+    if intent_type == "quit":
+        response = "You close your notebook. The mystery of Ravenwood Manor remains unsolved."
+    elif intent_type == "help":
+        response = HELP_TEXT
+    elif intent_type == "notebook":
+        response, _ = await _handle_notebook(state)
+    elif intent_type == "status":
+        response, _ = await _handle_status(state)
+    elif intent_type == "accuse":
+        response, gossip_notice = await _handle_accuse(remainder, state)
+    elif intent_type == "why":
+        response, _ = await _handle_why(remainder, state)
+    elif intent_type == "go":
+        response, _ = await _handle_go(remainder, state)
+    elif intent_type == "search":
+        response, _ = await _handle_search(remainder, state)
+    elif intent_type == "talk":
+        response, gossip_notice = await _handle_talk(remainder, state)
+    else:
+        response, gossip_notice = await _handle_freeform(raw, state)
+
+    # Contradiction detection
+    new_contradictions: list[str] = []
+    if not is_free:
+        for notice in check_contradictions(state.player_learned_facts):
+            if notice not in state.contradictions_shown:
+                state.contradictions_shown.add(notice)
+                new_contradictions.append(notice)
+
+    # Persist turn + maybe improve
+    improved = False
+    if not is_free:
+        await mem.remember_turn(state.turn, raw, response, state.session_id)
+        if state.turn > 0 and state.turn % IMPROVE_EVERY == 0:
+            await gm.run_improve(state.session_id, DATASET)
+            improved = True
+
+    return TurnResult(
+        response=response,
+        gossip=gossip_notice,
+        contradictions=new_contradictions,
+        game_over=state.game_over,
+        improved=improved,
+        turn=state.turn,
+        facts_count=len(state.player_learned_facts),
+        total_facts=len(FACTS_BY_ID),
+        clues_count=len(state.player_found_clues),
+        total_clues=len(CLUES_BY_ID),
+        intent_type=intent_type,
+        is_free_action=is_free,
+    )
+
 
 async def run_game(session_id: str, seed: int = 42) -> None:
     state = GameState(session_id=session_id, seed=seed)

@@ -108,10 +108,15 @@ async def narrate_npc_response(
 
     stance_note = npc_standing or "neutral — no prior interactions"
 
+    all_names = ", ".join(n.name for n in NPCS_BY_ID.values())
+
     user_prompt = f"""\
 NPC: {npc.name} ({npc.role})
 Persona: {npc.public_persona}
 Current stance toward detective: {stance_note}
+
+VALID PEOPLE IN THIS SCENARIO (no others exist — do not invent names):
+{all_names}
 
 AVAILABLE KNOWLEDGE — shares freely (you may reveal these):
 {freely_text}
@@ -128,7 +133,8 @@ Additional context from world memory:
 The detective says to {npc.name}: "{player_input}"
 
 Respond in character as {npc.name}. Rules:
-- Only reference facts from AVAILABLE KNOWLEDGE above. Invent nothing.
+- Only reference facts from AVAILABLE KNOWLEDGE above. Invent nothing new.
+- Only mention people from the VALID PEOPLE list above. Never invent guest names.
 - Actively deny or misdirect anything in LIES ABOUT.
 - Be evasive about "pressure only" facts unless directly cornered.
 - End with exactly one non-verbal cue in italics (expression, gesture, or tone).
@@ -279,29 +285,38 @@ async def narrate_accusation(
             "line about justice being served."
         )
     elif not is_correct and accused_id == solution["murderer_id"]:
-        # Right person, wrong accusation — insufficient evidence
+        # Right person, insufficient evidence — Gerald must repeat his real alibi, not invent one
+        accused_npc = NPCS_BY_ID.get(accused_id)
+        real_alibi = accused_npc.alibi if accused_npc else ""
         missing_summary = "; ".join(missing_facts[:3]) if missing_facts else "key evidence"
+        all_names = ", ".join(n.name for n in NPCS_BY_ID.values())
         user_prompt = (
             f"The detective accuses {accused_name} — correct instinct, but insufficient "
-            f"evidence to convict.\n"
-            f"Still needed: {missing_summary}\n\n"
-            "Gerald maintains his composure and demands proof. The other guests shift "
-            "uncomfortably. The detective has pointed at the right person but cannot yet "
-            "make it stick. In 4-5 sentences, describe Gerald's measured denial and the "
-            "social pressure on the detective. Hint they must find more concrete evidence. "
-            "The investigation continues."
+            f"evidence to convict yet.\n"
+            f"Evidence still needed: {missing_summary}\n"
+            f"{accused_name}'s stated alibi (use this exactly — do not invent a new one): "
+            f"\"{real_alibi}\"\n\n"
+            f"Valid character names in this scene (use no others): {all_names}\n\n"
+            "Gerald maintains his composure, repeats his stated alibi verbatim, and "
+            "demands the detective produce proof. The other guests shift uncomfortably "
+            "but say nothing definitive. In 4-5 sentences, describe his measured denial "
+            "and the social pressure on the detective. Hint they must find the specific "
+            "missing evidence listed above. The investigation continues."
         )
     else:
         correct_name = solution["murderer_name"]
         missing_summary = ", ".join(missing_facts[:3]) if missing_facts else "key evidence"
+        all_names = ", ".join(n.name for n in NPCS_BY_ID.values())
         user_prompt = (
             f"The detective accuses {accused_name} — but they are WRONG.\n"
             f"The true murderer is {correct_name}.\n"
             f"The detective still needs to find: {missing_summary}\n\n"
-            "The accused reacts with shock and indignation. Witnesses murmur. The "
-            "detective's credibility wavers slightly. In 4-5 sentences, describe the "
-            "scene and hint (without revealing who actually did it) that the detective "
-            "should look elsewhere. The investigation continues."
+            f"Valid character names in this scene (use no others): {all_names}\n\n"
+            "The accused reacts with shock and genuine indignation — they are innocent. "
+            "Only refer to people by the names in the valid list above. "
+            "Witnesses murmur. The detective's credibility wavers slightly. In 4-5 "
+            "sentences, describe the scene and hint (without naming the real culprit) "
+            "that the detective should look elsewhere. The investigation continues."
         )
     return await _call(_SYSTEM, user_prompt, max_tokens=550)
 
@@ -343,20 +358,31 @@ async def run_improve(session_id: str, dataset: str) -> None:
 
 def identify_npc_in_input(text: str) -> str | None:
     """
-    Return the NPC id if any NPC name (or role) is mentioned in the player's input.
-    Checks first name, full name, and role keyword.
+    Return the NPC id whose name best matches the player's input.
+
+    Scoring (higher = better):
+      full name in text  → 100 + len(name)   (longer full match wins ties)
+      N name tokens hit  → N                  (partial — "Calloway" alone = 1)
+
+    This prevents last-name collisions (Sophie Calloway vs James Calloway)
+    and title collisions (Colonel Gerald Ashworth vs Lady Victoria Ashworth).
     """
     text_lower = text.lower()
+    best_id, best_score = None, 0
+
     for npc in NPCS_BY_ID.values():
-        parts = [
-            npc.name.lower(),
-            npc.name.split()[0].lower(),   # first name
-            npc.name.split()[-1].lower(),  # last name
-            npc.role.lower(),
-        ]
-        if any(p in text_lower for p in parts):
-            return npc.id
-    return None
+        name_lower = npc.name.lower()
+        if name_lower in text_lower:
+            score = 100 + len(name_lower)
+        else:
+            tokens = [t for t in name_lower.split() if len(t) > 3]
+            score = sum(1 for t in tokens if t in text_lower)
+
+        if score > best_score:
+            best_score = score
+            best_id = npc.id
+
+    return best_id if best_score > 0 else None
 
 
 def identify_room_in_input(text: str) -> str | None:

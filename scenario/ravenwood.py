@@ -458,8 +458,8 @@ NPCS: list[NPC] = [
         alibi_is_true=True,
         known_facts=["f_sophie_saw_gerald", "f_calloway_dispute"],
         lies_about=[],
-        will_share_freely=["f_calloway_dispute"],
-        shares_under_pressure=["f_sophie_saw_gerald"],
+        will_share_freely=["f_calloway_dispute", "f_sophie_saw_gerald"],
+        shares_under_pressure=[],
         relationships=[
             Relationship("calloway_james", "FAMILY_OF", "father"),
             Relationship("harrington_thomas", "KNOWS", "kind to her since childhood"),
