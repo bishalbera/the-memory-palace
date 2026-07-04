@@ -1,6 +1,8 @@
 .env
 *.env.local
 
+scripts/.artifacts/
+
 __pycache__/
 *.py[cod]
 *.pyo
@@ -16,7 +18,7 @@ wheels/
 uv.lock
 
 .cognee_system/
-cognee_data/
+.cognee_data/
 
 .DS_Store
 Thumbs.db

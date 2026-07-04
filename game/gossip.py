@@ -1,33 +1,25 @@
-"""
- Consequence propagation ("gossip").
-
-When the player does something notable to NPC A (threatens, exposes a secret,
-publicly accuses, or helps), this module traverses outward from A along social
-edges (KNOWS / ALLIED_WITH / FAMILY_OF) up to 2 hops and updates PLAYER_STANDING
-for every NPC reached.
-
-Three scenes later, an NPC the player never spoke to may already be cold or
-evasive because word travelled A→B→C through the social graph.
-
-This is a multi-hop relationship query that cannot be done by semantic
-similarity alone — it is the core demonstration of Cognee graph value.
-"""
+"""Consequence propagation over the social graph, plus contradiction detection."""
 
 from __future__ import annotations
-from dataclasses import dataclass
 
+import collections
+from dataclasses import dataclass, field
+
+from cognee.infrastructure.databases.graph import get_graph_engine
+from cognee.modules.engine.utils import generate_node_id
+
+from game.bootstrap import reset_graph_context
 from scenario.ravenwood import NPCS_BY_ID
 
-# Edge types that carry social gossip
-SOCIAL_EDGES = {"KNOWS", "FAMILY_OF", "ALLIED_WITH", "BLACKMAILS"}
+# Lowercase to match the edge labels Cognee stores.
+SOCIAL_EDGES = {"knows", "family_of", "allied_with", "blackmails", "resents", "owes_debt_to"}
 
-# How each event type affects stances at hop 1 and hop 2
 STANCE_EFFECTS: dict[str, dict[int, str]] = {
-    "THREAT":       {1: "hostile",   2: "wary"},
-    "EXPOSURE":     {1: "hostile",   2: "wary"},
-    "ACCUSATION":   {1: "wary",      2: "suspicious"},
-    "CONFRONTATION":{1: "wary",      2: "suspicious"},
-    "HELP":         {1: "cooperative", 2: "neutral"},
+    "THREAT":        {1: "hostile",   2: "wary"},
+    "EXPOSURE":      {1: "hostile",   2: "wary"},
+    "ACCUSATION":    {1: "wary",      2: "suspicious"},
+    "CONFRONTATION": {1: "wary",      2: "suspicious"},
+    "HELP":          {1: "cooperative", 2: "neutral"},
 }
 
 STANCE_SEVERITY: dict[str, int] = {
@@ -40,60 +32,115 @@ STANCE_SEVERITY: dict[str, int] = {
 class GossipEvent:
     source_npc_id: str
     source_npc_name: str
-    event_type: str          # THREAT / EXPOSURE / ACCUSATION / CONFRONTATION / HELP
+    event_type: str
     description: str
-    affected: dict[str, tuple[str, str]]   # npc_id → (old_stance, new_stance)
+    affected: dict[str, tuple[str, str]]
+    paths: dict[str, list[str]] = field(default_factory=dict)
+    source: str = "graph"
 
 
-def get_social_network(npc_id: str, max_hops: int = 2) -> dict[str, int]:
-    """
-    BFS outward from npc_id along social edges.
-    Returns {reached_npc_id: hop_distance}.
-    """
-    visited: dict[str, int] = {}
-    frontier: set[str] = {npc_id}
-    hop = 0
+async def _traverse_social_graph(source_npc_id: str, max_hops: int = 2):
+    reset_graph_context()
+    engine = await get_graph_engine()
+    seed = str(generate_node_id(source_npc_id))
 
-    while frontier and hop < max_hops:
-        hop += 1
-        next_frontier: set[str] = set()
-        for current_id in frontier:
-            npc = NPCS_BY_ID.get(current_id)
-            if not npc:
-                continue
-            for rel in npc.relationships:
-                tid = rel.target_id
-                if rel.edge_type in SOCIAL_EDGES and tid not in visited and tid != npc_id:
-                    visited[tid] = hop
-                    next_frontier.add(tid)
-        frontier = next_frontier
+    nodes, edges = await engine.get_neighborhood([seed], depth=max_hops)
 
-    return visited
+    id2slug: dict[str, str] = {
+        nid: props.get("character_id")
+        for nid, props in nodes
+        if props.get("character_id")
+    }
+    id2slug.setdefault(seed, source_npc_id)
+
+    adj: dict[str, set[str]] = collections.defaultdict(set)
+    for s, t, rel, _ in edges:
+        if rel in SOCIAL_EDGES:
+            adj[s].add(t)
+            adj[t].add(s)
+
+    return _bfs(seed, adj, id2slug, source_npc_id, max_hops)
 
 
-def propagate(
+def _traverse_scenario(source_npc_id: str, max_hops: int = 2):
+    """Fallback over in-memory relationships if the graph query fails."""
+    adj: dict[str, set[str]] = collections.defaultdict(set)
+    for npc in NPCS_BY_ID.values():
+        for rel in npc.relationships:
+            if rel.edge_type.lower() in SOCIAL_EDGES and rel.target_id in NPCS_BY_ID:
+                adj[npc.id].add(rel.target_id)
+                adj[rel.target_id].add(npc.id)
+    identity = {nid: nid for nid in NPCS_BY_ID}
+    return _bfs(source_npc_id, adj, identity, source_npc_id, max_hops)
+
+
+def _bfs(seed, adj, id2slug, source_slug, max_hops):
+    dist = {seed: 0}
+    pred: dict[str, str | None] = {seed: None}
+    frontier = [seed]
+    for hop in range(1, max_hops + 1):
+        nxt = []
+        for cur in frontier:
+            for nb in adj.get(cur, ()):
+                if nb not in dist:
+                    dist[nb] = hop
+                    pred[nb] = cur
+                    nxt.append(nb)
+        frontier = nxt
+
+    hops: dict[str, int] = {}
+    paths: dict[str, list[str]] = {}
+    for nid, h in dist.items():
+        if nid == seed:
+            continue
+        slug = id2slug.get(nid)
+        if not slug:
+            continue
+        hops[slug] = h
+        chain, cur = [], nid
+        while cur is not None:
+            chain.append(id2slug.get(cur, cur))
+            cur = pred.get(cur)
+        chain.reverse()
+        paths[slug] = chain
+    return hops, paths
+
+
+async def propagate(
     source_npc_id: str,
     event_type: str,
     event_description: str,
     npc_stances: dict[str, str],
 ) -> GossipEvent:
-    """
-    Propagate a gossip event outward from source_npc_id.
-    Updates npc_stances in-place and returns a GossipEvent describing what changed.
-    """
-    network = get_social_network(source_npc_id, max_hops=2)
-    effects = STANCE_EFFECTS.get(event_type, {})
-    changes: dict[str, tuple[str, str]] = {}
+    origin = "graph"
+    try:
+        hops, paths = await _traverse_social_graph(source_npc_id, max_hops=2)
+        if not hops:
+            hops, paths = _traverse_scenario(source_npc_id, max_hops=2)
+            origin = "scenario"
+    except Exception:
+        hops, paths = _traverse_scenario(source_npc_id, max_hops=2)
+        origin = "scenario"
 
-    for affected_id, hop in network.items():
+    effects = STANCE_EFFECTS.get(event_type, {})
+
+    direct = effects.get(1)
+    if direct:
+        old = npc_stances.get(source_npc_id, "neutral")
+        if STANCE_SEVERITY.get(direct, 0) > STANCE_SEVERITY.get(old, 0):
+            npc_stances[source_npc_id] = direct
+
+    changes: dict[str, tuple[str, str]] = {}
+    result_paths: dict[str, list[str]] = {}
+    for affected_id, hop in hops.items():
         new_stance = effects.get(hop)
         if not new_stance:
             continue
         old_stance = npc_stances.get(affected_id, "neutral")
-        # Only escalate, never de-escalate via gossip
         if STANCE_SEVERITY.get(new_stance, 0) > STANCE_SEVERITY.get(old_stance, 0):
             npc_stances[affected_id] = new_stance
             changes[affected_id] = (old_stance, new_stance)
+            result_paths[affected_id] = paths.get(affected_id, [source_npc_id, affected_id])
 
     source = NPCS_BY_ID.get(source_npc_id)
     return GossipEvent(
@@ -102,11 +149,12 @@ def propagate(
         event_type=event_type,
         description=event_description,
         affected=changes,
+        paths=result_paths,
+        source=origin,
     )
 
 
 def format_gossip_report(event: GossipEvent) -> str | None:
-    """Return a visible notification string, or None if nothing changed."""
     if not event.affected:
         return None
     lines = [
@@ -120,10 +168,6 @@ def format_gossip_report(event: GossipEvent) -> str | None:
     return "\n".join(lines)
 
 
-# ── Contradiction detection ───────────────────────────────────────────────────
-
-# Pairs of facts that contradict each other.
-# If the player has heard/found both sides, surface the inconsistency.
 CONTRADICTIONS: list[tuple[str, str, str]] = [
     (
         "f_gerald_false_alibi",
@@ -147,10 +191,6 @@ CONTRADICTIONS: list[tuple[str, str, str]] = [
 
 
 def check_contradictions(learned_facts: list[str]) -> list[str]:
-    """
-    Return a list of contradiction notices for any pair of facts the player
-    has now discovered on both sides.
-    """
     learned = set(learned_facts)
     notices: list[str] = []
     for fact_a, fact_b, notice in CONTRADICTIONS:

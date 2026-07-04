@@ -1,18 +1,4 @@
-"""
-Phase 2 — World graph ingestion.
-
-Loads scenario/ravenwood.py into Cognee, builds all nodes and edges,
-and exposes verification helpers used by scripts/ingest_world.py.
-
-Strategy:
-  1. prune any stale data
-  2. setup() to initialise Kuzu / LanceDB / SQLite
-  3. Build all DataPoint nodes from scenario data
-  4. Wire edges (typed relationships) between nodes
-  5. add_data_points() → persists everything to the graph + vector index
-  6. Also remember() one rich-text summary per character so recall()
-     has semantic content to route through
-"""
+"""Build the Ravenwood world graph in Cognee from scenario data."""
 
 from __future__ import annotations
 
@@ -163,11 +149,6 @@ def _wire_character_edges(
 # ── rich-text summaries for recall() ─────────────────────────────────────────
 
 def _character_summary(npc) -> str:
-    """
-    Build a dense text description per NPC so that recall() has
-    semantic content to route through. This is ingested alongside the
-    structured graph nodes.
-    """
     rel_lines = "\n".join(
         f"  - {r.edge_type} {NPCS_BY_ID[r.target_id].name}: {r.note}"
         for r in npc.relationships
@@ -205,10 +186,6 @@ def _location_summary(loc) -> str:
 # ── main ingestion ─────────────────────────────────────────────────────────────
 
 async def ingest_world(*, clean: bool = True) -> None:
-    """
-    Full world ingestion. Set clean=False to skip prune (faster re-runs
-    when only verifying, not rebuilding).
-    """
     if clean:
         print("  Pruning previous data...")
         await cognee.prune.prune_data()
@@ -239,8 +216,7 @@ async def ingest_world(*, clean: bool = True) -> None:
     await add_data_points(all_points)
     print(f"  [{len(all_points)} nodes inserted]")
 
-    # ── Also remember() rich text per character and location ─────────────────
-    # This gives recall() semantic text content to work with alongside the graph.
+    # Text summaries give recall() semantic content alongside the structured graph.
     print("  Ingesting character summaries via remember()...")
     for npc in NPCS:
         summary = _character_summary(npc)
@@ -251,7 +227,6 @@ async def ingest_world(*, clean: bool = True) -> None:
         summary = _location_summary(loc)
         await cognee.remember(summary, dataset_name=DATASET)
 
-    # Solution chain — stored so the GM can retrieve it for endgame evaluation
     solution_text = (
         f"[SOLUTION] The murderer is {SOLUTION['murderer_name']}. "
         f"Narrative: {SOLUTION['narrative']}"

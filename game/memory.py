@@ -1,27 +1,22 @@
-
 from __future__ import annotations
 
 import os
 import cognee
 
+from game.bootstrap import reset_graph_context
+
 DATASET = os.environ.get("COGNEE_DATASET", "ravenwood")
 
 
-# ── recall helpers ────────────────────────────────────────────────────────────
+# ── recall ────────────────────────────────────────────────────────────────────
 
 async def recall_npc_context(npc_name: str, query: str, session_id: str) -> str:
-    """
-    Recall everything relevant to an NPC interaction:
-    the NPC's known facts + relationships from the world graph,
-    plus anything the player has already said/learned this session.
-    """
-    full_query = f"{npc_name}: {query}"
     try:
         results = await cognee.recall(
-            query_text=full_query,
+            query_text=f"{npc_name}: {query}",
             datasets=[DATASET],
             session_id=session_id,
-            only_context=True,   # raw context, not LLM answer — GM does the LLM step
+            only_context=True,
         )
         return _flatten(results)
     except Exception as exc:
@@ -29,7 +24,6 @@ async def recall_npc_context(npc_name: str, query: str, session_id: str) -> str:
 
 
 async def recall_room(room_name: str, session_id: str) -> str:
-    """Recall clues and events associated with a location."""
     try:
         results = await cognee.recall(
             query_text=f"clues and evidence in the {room_name}",
@@ -43,7 +37,6 @@ async def recall_room(room_name: str, session_id: str) -> str:
 
 
 async def recall_player_progress(query: str, session_id: str) -> str:
-    """What has the player already learned that's relevant to this query?"""
     try:
         results = await cognee.recall(
             query_text=query,
@@ -56,7 +49,6 @@ async def recall_player_progress(query: str, session_id: str) -> str:
 
 
 async def recall_npc_standing(npc_name: str, session_id: str) -> str:
-    """Retrieve the current relationship between player and an NPC."""
     try:
         results = await cognee.recall(
             query_text=f"player relationship and standing with {npc_name}",
@@ -64,15 +56,11 @@ async def recall_npc_standing(npc_name: str, session_id: str) -> str:
             only_context=True,
         )
         return _flatten(results)
-    except Exception as exc:
+    except Exception:
         return ""
 
 
 async def recall_why(question: str, session_id: str) -> str:
-    """
-    Explainable memory — used by the `why` command.
-    Retrieves the causal chain behind an NPC's current behaviour.
-    """
     try:
         results = await cognee.recall(
             query_text=question,
@@ -85,37 +73,7 @@ async def recall_why(question: str, session_id: str) -> str:
         return f"[memory unavailable: {exc}]"
 
 
-# ── remember helpers ──────────────────────────────────────────────────────────
-
-async def remember_turn(
-    turn: int,
-    player_action: str,
-    gm_response: str,
-    session_id: str,
-) -> None:
-    """Record a completed turn so future recalls are session-aware."""
-    text = (
-        f"[TURN {turn}]\n"
-        f"Detective: {player_action}\n"
-        f"GM: {gm_response}"
-    )
-    try:
-        await cognee.remember(text, session_id=session_id, dataset_name=DATASET)
-    except Exception:
-        pass  # memory failure must never crash the game
-
-
-async def remember_fact_learned(fact_statement: str, source: str, session_id: str) -> None:
-    """Record a specific fact the player has now uncovered."""
-    text = f"[PLAYER_LEARNED] Detective discovered: {fact_statement} (source: {source})"
-    try:
-        await cognee.remember(text, session_id=session_id, dataset_name=DATASET)
-    except Exception:
-        pass
-
-
 async def recall_accusation_evidence(accused_name: str, session_id: str) -> str:
-    """Pull everything the player has discovered specifically about the accused."""
     try:
         results = await cognee.recall(
             query_text=f"evidence against {accused_name} motive means opportunity alibi",
@@ -128,19 +86,22 @@ async def recall_accusation_evidence(accused_name: str, session_id: str) -> str:
         return ""
 
 
-async def forget_cleared_suspect(npc_name: str, session_id: str) -> None:
-    """
-    After a false accusation, prune the red-herring thread for this suspect
-    from session memory so future recalls aren't polluted by dead ends.
-    Demonstrates cognee.forget() — the fourth pillar of the CRUD memory API.
-    """
+# ── remember ──────────────────────────────────────────────────────────────────
+
+async def remember_turn(turn: int, player_action: str, gm_response: str, session_id: str) -> None:
+    text = f"[TURN {turn}]\nDetective: {player_action}\nGM: {gm_response}"
     try:
-        await cognee.forget(
-            text=f"Detective suspected {npc_name} of murder",
-            session_id=session_id,
-        )
+        await cognee.remember(text, session_id=session_id, dataset_name=DATASET)
     except Exception:
-        pass  # forget failure must never crash the game
+        pass
+
+
+async def remember_fact_learned(fact_statement: str, source: str, session_id: str) -> None:
+    text = f"[PLAYER_LEARNED] Detective discovered: {fact_statement} (source: {source})"
+    try:
+        await cognee.remember(text, session_id=session_id, dataset_name=DATASET)
+    except Exception:
+        pass
 
 
 async def remember_npc_event(
@@ -149,10 +110,6 @@ async def remember_npc_event(
     stance_change: str,
     session_id: str,
 ) -> None:
-    """
-    Record a notable player–NPC event for gossip propagation (Phase 4).
-    stance_change: 'hostile' | 'wary' | 'cooperative' | 'neutral'
-    """
     text = (
         f"[NPC_EVENT] {npc_name}: {event_description}. "
         f"Stance toward detective: {stance_change}"
@@ -163,15 +120,49 @@ async def remember_npc_event(
         pass
 
 
+# ── forget: scoped per-suspect dead-end threads ───────────────────────────────
+
+def _deadend_dataset(npc_id: str) -> str:
+    return f"deadend_{npc_id}"
+
+
+async def remember_suspicion(npc_id: str, npc_name: str, reason: str, session_id: str) -> None:
+    text = (
+        f"[SUSPICION] The detective is building a case against {npc_name} "
+        f"as the murderer of Lord Ravenwood. Reason: {reason}"
+    )
+    try:
+        # No session_id: session distillation on a new dataset trips access control (422/403).
+        await cognee.remember(text, dataset_name=_deadend_dataset(npc_id), self_improvement=False)
+    except Exception:
+        pass
+    finally:
+        reset_graph_context()
+
+
+async def forget_cleared_suspect(npc_id: str, npc_name: str, session_id: str) -> dict | None:
+    try:
+        return await cognee.forget(dataset=_deadend_dataset(npc_id))
+    except Exception:
+        return None
+    finally:
+        reset_graph_context()
+
+
 # ── util ──────────────────────────────────────────────────────────────────────
 
 def _flatten(results) -> str:
-    """Collapse recall() results to a single context string."""
+    # 1.2.2 recall entries carry text in content / answer / context depending on type.
     if not results:
         return ""
     parts = []
     for r in results:
-        text = getattr(r, "text", getattr(r, "answer", getattr(r, "context", str(r))))
+        text = None
+        for attr in ("content", "answer", "context", "text"):
+            val = getattr(r, attr, None)
+            if val:
+                text = val
+                break
         if text:
             parts.append(str(text).strip())
     return "\n\n".join(parts)

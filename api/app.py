@@ -1,14 +1,4 @@
-"""
-FastAPI web backend — A Death at Ravenwood Manor.
-
-Endpoints
----------
-GET  /                        → SPA (index.html)
-POST /api/start               → create session, return session_id + opening
-WS   /ws/{session_id}         → real-time game loop (JSON protocol)
-GET  /api/graph/{session_id}  → full current graph (for reconnect)
-GET  /api/health              → liveness probe
-"""
+"""FastAPI web backend for A Death at Ravenwood Manor."""
 
 from __future__ import annotations
 

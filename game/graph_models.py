@@ -1,14 +1,4 @@
-"""
-Custom Cognee DataPoint subclasses for Ravenwood Manor.
-
-Node types  : CharacterNode, FactNode, LocationNode, ClueNode, EventNode
-Edge types  : set via List[OtherNode] fields — Cognee uses the field name as the
-              relationship label in the graph (e.g. `knows_fact` → KNOWS_FACT edge).
-
-Import path confirmed in Phase 0:
-  from cognee.infrastructure.engine import DataPoint
-  from cognee.tasks.storage.add_data_points import add_data_points
-"""
+"""Cognee DataPoint subclasses. List-typed fields become graph edges by field name."""
 
 from __future__ import annotations
 

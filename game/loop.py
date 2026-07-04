@@ -1,12 +1,4 @@
-"""
-Core game loop — ties Cognee memory + GM narration + player input together.
-
-Phase 4 additions:
-  - Gossip propagation after notable NPC events (2-hop social traversal)
-  - `why` command wired to causal memory chain
-  - improve() called every 3 turns to bridge session → permanent graph
-  - Contradiction detection surfaced as 🔎 clues after each turn
-"""
+"""Core game loop: ties memory, narration, and player input together."""
 
 from __future__ import annotations
 
@@ -39,20 +31,17 @@ class GameState:
     player_found_clues: list[str] = field(default_factory=list)
     npc_stances: dict[str, str] = field(default_factory=dict)
     contradictions_shown: set = field(default_factory=set)
-    cleared_suspects: list[str] = field(default_factory=list)   # Phase 6: false accusations
+    cleared_suspects: list[str] = field(default_factory=list)
+    gossip_reasons: dict[str, dict] = field(default_factory=dict)  # npc_id → causal chain for `why`
     turn: int = 0
     game_over: bool = False
     seed: int = 42
 
 
-# ── evidence evaluation (Phase 6) ────────────────────────────────────────────
+# ── evidence evaluation ───────────────────────────────────────────────────────
 
 def _build_evidence_brief(accused_id: str, state: GameState) -> str:
-    """
-    Assemble a concise evidence brief from what the player has discovered.
-    Only surfaces facts that are part of the solution chain.
-    Used to ground the accusation narration in actual player discoveries.
-    """
+    """Solution-chain facts the player has discovered, to ground accusation narration."""
     from scenario.ravenwood import SOLUTION
     full_chain = SOLUTION["full_chain"]
     found = set(state.player_learned_facts)
@@ -182,10 +171,22 @@ async def _apply_gossip(
     if not event_type or event_type == "NONE":
         return None
 
-    event = propagate(npc_id, event_type, description, state.npc_stances)
+    event = await propagate(npc_id, event_type, description, state.npc_stances)
     notice = format_gossip_report(event)
 
     if event.affected:
+        for aid, (_old, new) in event.affected.items():
+            state.gossip_reasons[aid] = {
+                "source_name": event.source_npc_name,
+                "source_id": event.source_npc_id,
+                "event_type": event.event_type,
+                "description": description,
+                "stance": new,
+                "path_names": [
+                    NPCS_BY_ID[s].name if s in NPCS_BY_ID else s
+                    for s in event.paths.get(aid, [event.source_npc_id, aid])
+                ],
+            }
         await mem.remember_npc_event(
             npc_name=event.source_npc_name,
             event_description=description,
@@ -225,7 +226,6 @@ async def _handle_talk(text: str, state: GameState) -> tuple[str, str | None]:
 
     response = f"{npc.name}: \"{dialogue}\""
 
-    # Gossip propagation (Phase 4 core mechanic)
     gossip_notice = await _apply_gossip(
         npc_id=npc_id,
         event_type=event_type,
@@ -286,7 +286,23 @@ async def _handle_go(destination: str, state: GameState) -> tuple[str, None]:
 
 
 async def _handle_why(question: str, state: GameState) -> tuple[str, None]:
-    context = await mem.recall_why(question or "why is this happening", state.session_id)
+    # Reconstruct the causal chain from the gossip traversal path when we have one.
+    chain_context = ""
+    npc_id = gm.identify_npc_in_input(question)
+    reason = state.gossip_reasons.get(npc_id) if npc_id else None
+    if reason:
+        path = " → ".join(reason["path_names"])
+        npc_name = NPCS_BY_ID[npc_id].name
+        chain_context = (
+            "CAUSAL CHAIN (reconstructed from the social graph, do not contradict):\n"
+            f"The detective's action toward {reason['source_name']} "
+            f"({reason['event_type'].lower()}) travelled along social ties: {path}. "
+            f"Word reached {npc_name}, who now regards the detective as "
+            f"'{reason['stance']}'.\n\n"
+        )
+
+    recall_ctx = await mem.recall_why(question or "why is this happening", state.session_id)
+    context = (chain_context + recall_ctx).strip()
     narration = await gm.narrate_why(question, context)
     return narration, None
 
@@ -386,7 +402,6 @@ async def _handle_accuse(name: str, state: GameState) -> tuple[str, str | None]:
     has_evidence = not missing
     is_win = is_correct_person and has_evidence
 
-    # Build evidence brief from what player has actually found (Phase 6: graph evaluation)
     evidence_brief = _build_evidence_brief(accused_id, state)
 
     state.game_over = is_win
@@ -407,10 +422,16 @@ async def _handle_accuse(name: str, state: GameState) -> tuple[str, str | None]:
         state=state,
     )
 
-    # Phase 6 + Phase 5: wrong person → prune red herring thread, mark cleared
+    await mem.remember_suspicion(
+        accused_id,
+        accused_npc.name,
+        reason=f"formally accused at turn {state.turn}",
+        session_id=state.session_id,
+    )
+
     if not is_correct_person and accused_id not in state.cleared_suspects:
         state.cleared_suspects.append(accused_id)
-        await mem.forget_cleared_suspect(accused_npc.name, state.session_id)
+        await mem.forget_cleared_suspect(accused_id, accused_npc.name, state.session_id)
 
     return narration, gossip_notice
 
@@ -449,7 +470,7 @@ HELP_TEXT = """\
 
 # ── main loop ─────────────────────────────────────────────────────────────────
 
-# ── Web API interface (Phase 7) ────────────────────────────────────────────────
+# ── Web API interface ─────────────────────────────────────────────────────────
 
 @dataclass
 class TurnResult:
@@ -468,10 +489,7 @@ class TurnResult:
 
 
 async def process_turn(state: GameState, raw: str) -> TurnResult:
-    """
-    Process a single player input and return a structured TurnResult.
-    Used by the web backend — no stdin/stdout.
-    """
+    """Process one player input and return a TurnResult (used by the web backend)."""
     intent_type, remainder = _intent(raw)
     is_free = intent_type in ("help", "notebook", "status", "quit")
 
@@ -598,11 +616,9 @@ async def run_game(session_id: str, seed: int = 42) -> None:
 
         print(f"\n{response}")
 
-        # Gossip notification (Phase 4)
         if gossip_notice:
             print(gossip_notice)
 
-        # Contradiction detection (Phase 4)
         new_contradictions = [
             c for c in check_contradictions(state.player_learned_facts)
             if c not in state.contradictions_shown
@@ -611,16 +627,13 @@ async def run_game(session_id: str, seed: int = 42) -> None:
             state.contradictions_shown.add(notice)
             print(f"\n{notice}")
 
-        # Persist turn to session memory
         await mem.remember_turn(state.turn, raw, response, state.session_id)
 
-        # Run improve() every IMPROVE_EVERY turns — bridges session → permanent graph
         if state.turn % IMPROVE_EVERY == 0:
             print("  [memory] Consolidating discoveries into world graph...", end=" ", flush=True)
             await gm.run_improve(session_id, DATASET)
             print("done.")
 
-        # Memory status indicator (visible proof of Cognee working)
         known = len(state.player_learned_facts)
         clues = len(state.player_found_clues)
         print(
@@ -630,7 +643,6 @@ async def run_game(session_id: str, seed: int = 42) -> None:
         )
 
         if state.game_over:
-            # Phase 6 endgame sequence — case file + GM epilogue
             _show_case_file(state)
             print("\n  [Composing epilogue...]\n")
             epilogue = await gm.narrate_epilogue(

@@ -1,11 +1,4 @@
-"""
-Game Master — LLM narration layer.
-
-The GM's ONLY job is narration. It never invents facts.
-All facts come from Cognee recall; the LLM only gives them voice and atmosphere.
-
-Uses Anthropic SDK directly (separate from Cognee's internal LLM usage).
-"""
+"""Game Master narration layer. Dramatizes retrieved facts; never invents them."""
 
 from __future__ import annotations
 
@@ -88,10 +81,7 @@ async def narrate_npc_response(
     npc_standing: str,
     game_state: Any,
 ) -> tuple[str, list[str]]:
-    """
-    Generate an NPC's in-character response.
-    Returns (dialogue_text, list_of_fact_ids_revealed).
-    """
+    """Returns (dialogue, revealed_fact_ids, event_type)."""
     npc = NPCS_BY_ID.get(npc_id)
     if not npc:
         return "That person doesn't seem to be here.", [], None
@@ -337,36 +327,22 @@ async def narrate_epilogue(turns: int, facts_found: int, total_facts: int) -> st
 # ── improve / between-scene enrichment ───────────────────────────────────────
 
 async def run_improve(session_id: str, dataset: str) -> None:
-    """
-    Run Cognee's improve() to enrich the graph between scenes.
-    Bridges session memory into the permanent graph so future recall()
-    calls can traverse player discoveries alongside the world graph.
-    """
     import cognee
     try:
         await cognee.improve(
             dataset=dataset,
             session_ids=[session_id],
-            build_global_context_index=False,   # skip expensive global index
+            build_global_context_index=False,
             run_in_background=False,
         )
     except Exception:
-        pass  # improve failure must never crash the game
+        pass
 
 
 # ── utility ───────────────────────────────────────────────────────────────────
 
 def identify_npc_in_input(text: str) -> str | None:
-    """
-    Return the NPC id whose name best matches the player's input.
-
-    Scoring (higher = better):
-      full name in text  → 100 + len(name)   (longer full match wins ties)
-      N name tokens hit  → N                  (partial — "Calloway" alone = 1)
-
-    This prevents last-name collisions (Sophie Calloway vs James Calloway)
-    and title collisions (Colonel Gerald Ashworth vs Lady Victoria Ashworth).
-    """
+    # Prefer full-name matches over shared tokens to avoid last-name/title collisions.
     text_lower = text.lower()
     best_id, best_score = None, 0
 

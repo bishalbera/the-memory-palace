@@ -1,13 +1,4 @@
-"""
-Session registry and progressive knowledge-graph state tracker.
-
-Each active session carries:
-  - GameState  — full game logic state (facts, clues, stances, etc.)
-  - GraphState — which Cytoscape nodes/edges have been revealed to the player
-
-The graph grows turn-by-turn as the player investigates, giving the live
-Cytoscape panel its progressive-reveal behaviour.
-"""
+"""Session registry and progressive graph-reveal state for the web client."""
 
 from __future__ import annotations
 
@@ -114,10 +105,7 @@ def get_session(session_id: str) -> tuple[GameState, GraphState] | None:
 # ── Progressive reveal ────────────────────────────────────────────────────────
 
 def update_graph(game_state: GameState, graph: GraphState) -> list[dict]:
-    """
-    Diff game_state against the current graph and return newly revealed elements.
-    Mutates graph in-place; caller sends the returned list to the client.
-    """
+    """Return newly revealed elements, mutating graph in-place."""
     new: list[dict] = []
 
     # Locations visited
