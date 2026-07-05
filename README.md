@@ -8,7 +8,6 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![Cognee](https://img.shields.io/badge/Memory-Cognee-6E56CF)](https://www.cognee.ai/)
 [![Hackathon](https://img.shields.io/badge/WeMakeDevs-The%20Hangover%20Part%20AI-E4405F)](https://www.wemakedevs.org/hackathons/cognee)
-[![License](https://img.shields.io/badge/License-MIT-000000)](LICENSE)
 
 <em>An AI Game Master that runs a living murder mystery — where a single word to the wrong suspect can turn the whole manor against you three rooms later.</em>
 
@@ -43,21 +42,21 @@ The name is a double meaning. A *memory palace* is the ancient technique of stor
 
 Most "AI with memory" demos show the bot recalling your name. That's a lookup — any vector store does it. Here's what a **graph** does that a vector store cannot:
 
-Early in the game, you corner the **Butler** and threaten to expose his gambling debt. You never speak to the gardener. But two scenes later, in a completely different wing of the manor, the **Gardener** goes cold and stops answering your questions. Ask *"why won't you talk to me?"* and the Game Master traces the actual chain:
+Early in the game, you publicly accuse the **Butler** (Thomas Harrington). You never speak to the maid. But two scenes later, in a completely different wing of the manor, the **Maid** (Cecilia Brand) goes cold and stops answering your questions. Ask *"why won't you talk to me?"* and the Game Master traces the actual chain:
 
 ```mermaid
 graph LR
-    P([🕵️ You]) -- "threaten (scene 1)" --> B[🎩 Butler]
-    B -- KNOWS --> C[🍳 Cook]
-    C -- FAMILY_OF --> G[🌿 Gardener]
-    G -. "distrusts you (scene 3)" .-> P
+    P([🕵️ You]) -- "accuse (scene 1)" --> B[🎩 Butler]
+    B -- ALLIED_WITH --> H[🔑 Housekeeper]
+    H -- KNOWS --> M[🕯️ Maid]
+    M -. "distrusts you (scene 3)" .-> P
 
     style P fill:#6E56CF,color:#fff
     style B fill:#8B0000,color:#fff
-    style G fill:#2F4F4F,color:#fff
+    style M fill:#2F4F4F,color:#fff
 ```
 
-Word traveled **Butler → Cook → Gardener** along the social graph. That's a **multi-hop relationship traversal** — "who is within 2 hops of the person I just wronged?" — a question semantic similarity structurally *cannot* answer. This is the heart of the project, and it runs through Cognee's graph layer, not an `if` statement.
+Word traveled **Butler → Housekeeper → Maid** along the social graph. That's a **multi-hop relationship traversal** — "who is within 2 hops of the person I just wronged?" — a question semantic similarity structurally *cannot* answer. It runs through Cognee's graph layer, not an `if` statement — and the `why` command reconstructs the chain from the same traversal path.
 
 ---
 
@@ -74,10 +73,11 @@ flowchart TD
     B --> LLM[[LLM Narrator<br/>voices the NPC]]
     LLM --> B
     B -- "remember() the outcome" --> COG
-    B --> UI[💬 Chat + 🕸️ Live case graph]
+    B --> UI[💬 Case journal + 🕸️ Live corkboard]
 
-    COG -. "improve() between scenes:<br/>propagate gossip, catch contradictions" .-> COG
-    COG -. "forget() dead threads<br/>& resolved red herrings" .-> COG
+    B -. "get_neighborhood(): 2-hop gossip<br/>traversal over the social graph" .-> COG
+    COG -. "improve() between scenes:<br/>consolidate discoveries into the graph" .-> COG
+    COG -. "forget() a cleared suspect's<br/>dead-end thread (its own dataset)" .-> COG
 ```
 
 The narrator (the LLM) never invents facts — it can only dramatize what it **retrieves from the graph**. Memory and narration are cleanly separated, which is why the story stays consistent.
@@ -87,30 +87,36 @@ The narrator (the LLM) never invents facts — it can only dramatize what it **r
 | Cognee op | In the story | Why it's load-bearing |
 |-----------|--------------|-----------------------|
 | **`remember()`** | Seeds the world graph (suspects, relationships, secrets, clues) and records every player action | The entire case lives in the graph, not the prompt |
-| **`recall()`** | Fetches what an NPC knows + their current standing before they speak; answers your deductions | Auto-routes between similarity *and* multi-hop graph traversal |
-| **`improve()` / memify** | Between scenes: propagates rumors along social edges and **flags contradictory alibis** | Turns raw memories into evolving, self-correcting world state |
-| **`forget()`** | Prunes exhausted dialogue and resolved red herrings | Keeps the working memory lean across a long session |
+| **`recall()`** | Fetches what an NPC knows + relevant context before they speak; answers your deductions | Grounds every line the narrator says in retrieved memory, not invention |
+| **`improve()` / memify** | Runs between scenes to consolidate the turn's discoveries into the world graph | Turns raw session memories into durable, queryable world state |
+| **`forget()`** | On a false accusation, prunes that suspect's dead-end thread — a dedicated dataset — graph nodes and vectors and all | Keeps the working memory lean without touching the real case graph |
 
 ### 🕸️ The query a vector store can't do
 
 ```python
 # When you wrong an NPC, the consequence spreads along real relationships.
-# This is graph traversal, not similarity search.
-witnesses = await cognee.recall(
-    "characters within 2 hops of {npc} via KNOWS / FAMILY_OF / ALLIED_WITH"
-)
-for c in witnesses:
-    update_standing(c, toward="player", reason=event_id)   # gossip ripples outward
+# Cognee performs the traversal over its own graph — this is not similarity search.
+engine = await get_graph_engine()
+nodes, edges = await engine.get_neighborhood([wronged_npc_id], depth=2)
+
+# Keep only the social edges, then BFS outward to find who's within 2 hops.
+affected = bfs(seed=wronged_npc_id, edges=edges,
+               edge_types={"knows", "family_of", "allied_with", "blackmails"})
+for npc, hops in affected.items():
+    record_standing_change(npc, toward="player")            # gossip ripples outward
 ```
+
+The edges come from Cognee's memory; the traversal is a graph algorithm *over Cognee's graph*. Change one relationship in the scenario, re-ingest, and a **different set of NPCs reacts — with zero change to the game loop.**
 
 ---
 
 ## 🛠️ Tech stack
 
-- **Memory:** [Cognee](https://github.com/topoteretes/cognee) (Cloud) — hybrid **graph + vector** knowledge store
+- **Memory:** self-hosted [Cognee](https://github.com/topoteretes/cognee) — hybrid **graph + vector** store running **100% locally** (Kuzu graph + LanceDB vectors + SQLite), no cloud, no external memory API
 - **Backend:** FastAPI + Uvicorn (Python 3.11+)
 - **Narration:** LLM via API (configurable provider)
-- **Frontend:** Chat panel + a **live case graph** that reveals nodes as you discover them
+- **Embeddings:** local `fastembed` on CPU — no OpenAI key required
+- **Frontend:** a candlelit "detective's desk" — suspect dossiers with live standings, an evidence tray, and a corkboard that draws the gossip red-string, the *why* chain, and the motive→means→opportunity path as you uncover them
 - **Scenario:** a single, internally-consistent mystery defined as structured data in `scenario/`
 
 ```
@@ -118,8 +124,8 @@ the-memory-palace/
 ├── api/          # FastAPI app + game-loop endpoints
 ├── game/         # core loop, Cognee memory layer, gossip + accusation logic
 ├── scenario/     # the murder mystery: suspects, relationships, clues, solution
-├── frontend/     # chat UI + live graph visualization
-├── scripts/      # Cognee smoke test, demo seeding
+├── frontend/     # the detective's-desk UI + live corkboard (Cytoscape)
+├── scripts/      # ingest_world.py — build the world graph in Cognee
 └── main.py       # uvicorn entrypoint
 ```
 
@@ -127,24 +133,23 @@ the-memory-palace/
 
 ## 🚀 Quickstart
 
-**Prerequisites:** Python 3.11+, a Cognee Cloud account ([free Developer plan](https://platform.cognee.ai/sign-in), promo code `COGNEE-35`), and an LLM API key.
+**Prerequisites:** Python 3.11+ and one LLM API key. That's it — Cognee runs **self-hosted and embedded** (Kuzu + LanceDB + SQLite), so there's no account, no cloud instance, and no external memory service. The graph persists to `./.cognee_system` in the repo.
 
 ```bash
 # 1. Clone
 git clone https://github.com/bishalbera/the-memory-palace.git
 cd the-memory-palace
 
-# 2. Install (uv recommended)
+# 2. Install (uv recommended) — pulls cognee[anthropic,fastembed]
 uv sync            # or: pip install -e .
 
-# 3. Configure secrets
+# 3. Configure — only the LLM key is required
 cp .env.template .env
-#   LLM_API_KEY=sk-...
-#   COGNEE_BASE_URL=https://your-instance.cognee.ai
-#   COGNEE_API_KEY=ck_...
+#   LLM_API_KEY=...            # your Anthropic (or configured provider) key
+#   embedding runs locally via fastembed — no extra key needed
 
-# 4. (recommended) prove the memory layer works
-python scripts/verify_cognee.py
+# 4. Build the world graph in Cognee (one time; ~2-3 min, ingests the scenario)
+python scripts/ingest_world.py
 
 # 5. Play
 python main.py     # → http://localhost:8000
@@ -162,11 +167,11 @@ python main.py     # → http://localhost:8000
 <!-- TODO: embed your 60–90s demo GIF/video here -->
 
 **Shot list for the demo GIF (record these beats):**
-1. **Setup** — the manor, the body, the twelve suspects appear on the case graph.
-2. **The wrong word** — you threaten the Butler about his debt.
-3. **The ripple** — scenes later, an NPC you never met turns cold.
-4. **The reveal** — you ask *"why?"* and the Game Master traces the Butler → Cook → Gardener chain on the graph.
-5. **A contradiction caught** — `improve()` flags two suspects whose alibis don't line up.
+1. **Setup** — the manor, the body, the twelve suspects appear on the corkboard.
+2. **The wrong word** — you publicly accuse the Butler (or Calloway) before the assembled house.
+3. **The ripple** — scenes later, an NPC you never met turns cold as their standing flips.
+4. **The reveal** — you ask *"why?"* and the Game Master traces the Butler → Housekeeper → Maid chain on the graph.
+5. **A contradiction caught** — the game flags two suspects whose alibis don't line up.
 6. **The accusation** — you name the killer, and the motive → means → opportunity path lights up.
 
 ---
@@ -181,10 +186,6 @@ python main.py     # → http://localhost:8000
 - [ ] Persistent detective across cases (your reputation follows you)
 - [ ] Multiplayer parlor — several detectives, one shared graph
 - [ ] Voice narration
-
-## 📜 License
-
-MIT — see [LICENSE](LICENSE).
 
 <div align="center">
 <br/>
