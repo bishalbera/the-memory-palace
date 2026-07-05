@@ -187,10 +187,6 @@ A complete, unedited playthrough of a single case — from the empty corkboard t
 
 ---
 
-## 🏆 Built for the WeMakeDevs × Cognee Hackathon
-
-**"The Hangover Part AI: Where's My Context?"** — the challenge: *build AI that doesn't wake up with no memory of last night.* The Memory Palace answers it by making persistent, relationship-aware, self-correcting memory the core mechanic of a game you can actually play.
-
 ## 🗺️ Roadmap
 
 - [ ] Multiple mysteries / procedurally generated cases
