@@ -11,8 +11,11 @@
 
 <em>An AI Game Master that runs a living murder mystery — where a single word to the wrong suspect can turn the whole manor against you three rooms later.</em>
 
-<!-- TODO: drop your hero GIF here. See the "Shot list" section at the bottom for exactly what to record. -->
-<!-- ![The Memory Palace — live demo](docs/hero.gif) -->
+<br/><br/>
+
+[![The Memory Palace — watch the demo](https://img.youtube.com/vi/Z078rVGGcrY/maxresdefault.jpg)](https://youtu.be/Z078rVGGcrY)
+
+<sub>▶️ <a href="https://youtu.be/Z078rVGGcrY">Watch the full walkthrough</a></sub>
 
 </div>
 
@@ -164,15 +167,16 @@ python main.py     # → http://localhost:8000
 
 ## 🎥 Demo
 
-<!-- TODO: embed your 60–90s demo GIF/video here -->
+**▶️ Full walkthrough: [youtu.be/Z078rVGGcrY](https://youtu.be/Z078rVGGcrY)**
 
-**Shot list for the demo GIF (record these beats):**
-1. **Setup** — the manor, the body, the twelve suspects appear on the corkboard.
-2. **The wrong word** — you publicly accuse the Butler (or Calloway) before the assembled house.
-3. **The ripple** — scenes later, an NPC you never met turns cold as their standing flips.
-4. **The reveal** — you ask *"why?"* and the Game Master traces the Butler → Housekeeper → Maid chain on the graph.
-5. **A contradiction caught** — the game flags two suspects whose alibis don't line up.
-6. **The accusation** — you name the killer, and the motive → means → opportunity path lights up.
+[![Watch the demo](https://img.youtube.com/vi/Z078rVGGcrY/maxresdefault.jpg)](https://youtu.be/Z078rVGGcrY)
+
+A complete, unedited playthrough of a single case — from the empty corkboard to the killer's confession. Along the way it shows every beat that makes the memory graph load-bearing:
+
+- **The ripple** — a public accusation travels 2 hops across the social graph, and suspects you never spoke to turn cold.
+- **The reveal** — ask *"why?"* and the Game Master reconstructs the exact chain that carried the rumor.
+- **A contradiction caught** — two facts in the graph that can't both be true surface on their own.
+- **The accusation** — name the killer, and the motive → means → opportunity path lights up, evaluated against the graph.
 
 ---
 
