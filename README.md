@@ -170,8 +170,9 @@ python main.py     # → http://localhost:8000
 
 ## 🌐 Play it live
 
-<!-- TODO: paste your deployed URL here once it's up -->
-**▶️ Live demo:** _coming soon_ — [play in your browser](#)
+**▶️ [Play in your browser →](https://bishalbera-memory-palace.hf.space)** — no install, runs on a free self-hosted Hugging Face Space.
+
+<sub>Free Spaces sleep after inactivity, so the first load may take a minute to wake.</sub>
 
 ---
 
