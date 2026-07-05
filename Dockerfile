@@ -17,6 +17,17 @@ ENV HOME=/home/user \
     PYTHONUNBUFFERED=1 \
     PORT=7860
 
+# App / Cognee config (non-secret). Only LLM_API_KEY is set as a Space secret.
+# Without these the container has no .env, and Cognee falls back to OpenAI
+# embeddings and 401s on the Anthropic key.
+ENV LLM_PROVIDER=anthropic \
+    LLM_MODEL=anthropic/claude-haiku-4-5-20251001 \
+    GM_MODEL=claude-sonnet-4-6 \
+    EMBEDDING_PROVIDER=fastembed \
+    EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2 \
+    EMBEDDING_DIMENSIONS=384 \
+    COGNEE_DATASET=ravenwood
+
 RUN pip install --no-cache-dir --user -e .
 
 EXPOSE 7860
