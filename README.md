@@ -12,7 +12,14 @@
 
 <br/><br/>
 
-[![The Memory Palace — watch the demo](https://img.youtube.com/vi/Z078rVGGcrY/maxresdefault.jpg)](https://youtu.be/Z078rVGGcrY)
+<a href="https://youtu.be/Z078rVGGcrY">
+  <img
+    width="1408"
+    height="768"
+    alt="The Memory Palace Demo"
+    src="https://github.com/user-attachments/assets/759869ed-54e3-4347-b56a-5705d3d06865"
+  />
+</a>
 
 <sub>▶️ <a href="https://youtu.be/Z078rVGGcrY">Watch the full walkthrough</a></sub>
 
