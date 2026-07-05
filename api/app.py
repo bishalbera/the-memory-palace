@@ -21,7 +21,6 @@ from api.session import new_session, get_session, update_graph, full_graph, buil
 app = FastAPI(title="Ravenwood Manor", docs_url=None, redoc_url=None)
 
 STATIC_DIR = Path(__file__).parent.parent / "frontend" / "static"
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -102,6 +101,14 @@ async def ws_game(websocket: WebSocket, session_id: str):
                 "graph_delta": new_elements,
                 "intent_type": result.intent_type,
                 "is_free": result.is_free_action,
+                "speaker": result.speaker,
+                "stances": result.stances,
+                "gossip_event": result.gossip_event,
+                "why_chain": result.why_chain,
+                "contradiction": result.contradiction,
+                "accusation": result.accusation,
+                "clues": result.clues,
+                "location": result.location,
             }
 
             if result.game_over:
@@ -127,3 +134,6 @@ async def ws_game(websocket: WebSocket, session_id: str):
             await websocket.send_json({"type": "error", "message": str(exc)})
         except Exception:
             pass
+
+
+app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")

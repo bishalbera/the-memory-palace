@@ -168,32 +168,43 @@ def format_gossip_report(event: GossipEvent) -> str | None:
     return "\n".join(lines)
 
 
-CONTRADICTIONS: list[tuple[str, str, str]] = [
+# (id, fact_a, fact_b, notice, suspect_pair) — pair drives the UI glow, may be None.
+CONTRADICTIONS: list[tuple[str, str, str, str, tuple[str, str] | None]] = [
     (
+        "c_alibi",
         "f_gerald_false_alibi",
         "f_sophie_saw_gerald",
         "Colonel Ashworth claims he was in his room from 8:40 PM — yet someone "
         "reports seeing him leave the study corridor at 9:15 PM.",
+        ("ashworth_gerald", "calloway_sophie"),
     ),
     (
+        "c_foxglove",
         "f_foxglove_missing",
         "f_digitalis_in_glass",
         "Foxglove plants were uprooted from the manor garden — and the substance "
         "found in the brandy glass is a digitalis extract derived from foxglove.",
+        None,
     ),
     (
+        "c_vial",
         "f_pemberton_digitalis_missing",
         "f_digitalis_in_glass",
         "Dr. Pemberton's medical bag is missing a digitalis vial — yet digitalis "
         "was also found in the victim's brandy glass. One source may be innocent.",
+        ("pemberton_eleanor", "ashworth_gerald"),
     ),
 ]
 
 
-def check_contradictions(learned_facts: list[str]) -> list[str]:
+def detect_contradictions(learned_facts: list[str]) -> list[dict]:
     learned = set(learned_facts)
-    notices: list[str] = []
-    for fact_a, fact_b, notice in CONTRADICTIONS:
+    out: list[dict] = []
+    for cid, fact_a, fact_b, notice, pair in CONTRADICTIONS:
         if fact_a in learned and fact_b in learned:
-            notices.append(f"  🔎 Inconsistency noticed: {notice}")
-    return notices
+            out.append({"id": cid, "notice": notice, "pair": pair})
+    return out
+
+
+def check_contradictions(learned_facts: list[str]) -> list[str]:
+    return [f"  🔎 Inconsistency noticed: {c['notice']}" for c in detect_contradictions(learned_facts)]

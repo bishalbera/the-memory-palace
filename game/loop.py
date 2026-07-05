@@ -15,10 +15,16 @@ from scenario.ravenwood import (
 )
 import game.memory as mem
 import game.gm as gm
-from game.gossip import propagate, format_gossip_report, check_contradictions
+from game.gossip import propagate, format_gossip_report, check_contradictions, detect_contradictions
 
 DATASET = os.environ.get("COGNEE_DATASET", "ravenwood")
 IMPROVE_EVERY = 3   # run cognee.improve() every N turns
+
+# Backend stances → the four the UI renders.
+_UI_STANCE = {
+    "hostile": "hostile", "wary": "wary", "suspicious": "wary",
+    "cooperative": "warm", "neutral": "neutral",
+}
 
 # ── game state ────────────────────────────────────────────────────────────────
 
@@ -36,6 +42,12 @@ class GameState:
     turn: int = 0
     game_over: bool = False
     seed: int = 42
+    # turn-scoped structured data for the web UI (cleared each turn)
+    last_gossip: dict | None = None
+    last_why_chain: list[str] | None = None
+    last_contradiction: dict | None = None
+    last_accusation: dict | None = None
+    last_speaker: str | None = None
 
 
 # ── evidence evaluation ───────────────────────────────────────────────────────
@@ -176,17 +188,30 @@ async def _apply_gossip(
 
     if event.affected:
         for aid, (_old, new) in event.affected.items():
+            path_ids = event.paths.get(aid, [event.source_npc_id, aid])
             state.gossip_reasons[aid] = {
                 "source_name": event.source_npc_name,
                 "source_id": event.source_npc_id,
                 "event_type": event.event_type,
                 "description": description,
                 "stance": new,
+                "path_ids": path_ids,
                 "path_names": [
-                    NPCS_BY_ID[s].name if s in NPCS_BY_ID else s
-                    for s in event.paths.get(aid, [event.source_npc_id, aid])
+                    NPCS_BY_ID[s].name if s in NPCS_BY_ID else s for s in path_ids
                 ],
             }
+
+        # Longest path among the affected is the thread to draw on the board.
+        longest = max(event.paths.values(), key=len, default=[event.source_npc_id])
+        state.last_gossip = {
+            "origin": event.source_npc_id,
+            "chain": longest,
+            "affected": [
+                {"id": aid, "to": _UI_STANCE.get(new, new)}
+                for aid, (_old, new) in event.affected.items()
+            ],
+        }
+
         await mem.remember_npc_event(
             npc_name=event.source_npc_name,
             event_description=description,
@@ -224,6 +249,7 @@ async def _handle_talk(text: str, state: GameState) -> tuple[str, str | None]:
             FACTS_BY_ID[fid].statement, npc.name, state.session_id
         )
 
+    state.last_speaker = npc.name
     response = f"{npc.name}: \"{dialogue}\""
 
     gossip_notice = await _apply_gossip(
@@ -291,6 +317,7 @@ async def _handle_why(question: str, state: GameState) -> tuple[str, None]:
     npc_id = gm.identify_npc_in_input(question)
     reason = state.gossip_reasons.get(npc_id) if npc_id else None
     if reason:
+        state.last_why_chain = reason["path_ids"]
         path = " → ".join(reason["path_names"])
         npc_name = NPCS_BY_ID[npc_id].name
         chain_context = (
@@ -433,7 +460,57 @@ async def _handle_accuse(name: str, state: GameState) -> tuple[str, str | None]:
         state.cleared_suspects.append(accused_id)
         await mem.forget_cleared_suspect(accused_id, accused_npc.name, state.session_id)
 
+    state.last_accusation = {
+        "accused_id": accused_id,
+        "accused_name": accused_npc.name,
+        "correct": is_win,
+        "correct_person": is_correct_person,
+        "path_labels": _accusation_path_labels(state) if is_win else [],
+    }
+
     return narration, gossip_notice
+
+
+# ── web UI structured data ────────────────────────────────────────────────────
+
+_ACCUSE_PATH = [
+    ("MOTIVE", ["f_gerald_embezzled", "f_ravenwood_discovered_gerald", "f_will_change"]),
+    ("MEANS", ["f_foxglove_missing", "f_gerald_poisoned_decanter", "f_digitalis_in_glass"]),
+    ("OPPORTUNITY", ["f_sophie_saw_gerald", "f_gerald_false_alibi"]),
+]
+
+
+def _accusation_path_labels(state: GameState) -> list[str]:
+    found = set(state.player_learned_facts)
+    labels: list[str] = []
+    for category, ids in _ACCUSE_PATH:
+        fid = next((f for f in ids if f in found), None)
+        if fid:
+            stmt = FACTS_BY_ID[fid].statement
+            stmt = stmt[:70] + "…" if len(stmt) > 70 else stmt
+            labels.append(f"{category} — {stmt}")
+    return labels
+
+
+def _ui_stances(state: GameState) -> dict[str, str]:
+    return {nid: _UI_STANCE.get(st, st) for nid, st in state.npc_stances.items()}
+
+
+def _clue_objects(state: GameState) -> list[dict]:
+    out: list[dict] = []
+    for cid in state.player_found_clues:
+        clue = CLUES_BY_ID.get(cid)
+        if not clue:
+            continue
+        loc = LOCATIONS_BY_ID.get(clue.location_id)
+        name = cid.replace("clue_", "").replace("_", " ").title()
+        out.append({
+            "id": cid,
+            "name": name,
+            "note": clue.description,
+            "found_at": loc.name if loc else clue.location_id,
+        })
+    return out
 
 
 async def _handle_freeform(text: str, state: GameState) -> tuple[str, str | None]:
@@ -486,12 +563,27 @@ class TurnResult:
     total_clues: int
     intent_type: str
     is_free_action: bool = False
+    speaker: str | None = None
+    stances: dict = field(default_factory=dict)
+    gossip_event: dict | None = None
+    why_chain: list | None = None
+    contradiction: dict | None = None
+    accusation: dict | None = None
+    clues: list = field(default_factory=list)
+    location: str = ""
 
 
 async def process_turn(state: GameState, raw: str) -> TurnResult:
     """Process one player input and return a TurnResult (used by the web backend)."""
     intent_type, remainder = _intent(raw)
     is_free = intent_type in ("help", "notebook", "status", "quit")
+
+    # Clear turn-scoped structured data.
+    state.last_gossip = None
+    state.last_why_chain = None
+    state.last_contradiction = None
+    state.last_accusation = None
+    state.last_speaker = None
 
     if not is_free:
         state.turn += 1
@@ -519,13 +611,24 @@ async def process_turn(state: GameState, raw: str) -> TurnResult:
     else:
         response, gossip_notice = await _handle_freeform(raw, state)
 
-    # Contradiction detection
+    # Strip the 'Name: "..."' wrapper for NPC dialogue; the UI adds the speaker.
+    if state.last_speaker:
+        prefix = f'{state.last_speaker}: "'
+        if response.startswith(prefix) and response.endswith('"'):
+            response = response[len(prefix):-1]
+
+    # Contradiction detection (structured for the UI + notice strings).
     new_contradictions: list[str] = []
     if not is_free:
-        for notice in check_contradictions(state.player_learned_facts):
-            if notice not in state.contradictions_shown:
-                state.contradictions_shown.add(notice)
-                new_contradictions.append(notice)
+        for c in detect_contradictions(state.player_learned_facts):
+            notice = f"  🔎 Inconsistency noticed: {c['notice']}"
+            if notice in state.contradictions_shown:
+                continue
+            state.contradictions_shown.add(notice)
+            new_contradictions.append(notice)
+            if state.last_contradiction is None and c["pair"]:
+                a, b = c["pair"]
+                state.last_contradiction = {"a": a, "b": b, "text": c["notice"]}
 
     # Persist turn + maybe improve
     improved = False
@@ -548,6 +651,15 @@ async def process_turn(state: GameState, raw: str) -> TurnResult:
         total_clues=len(CLUES_BY_ID),
         intent_type=intent_type,
         is_free_action=is_free,
+        speaker=state.last_speaker,
+        stances=_ui_stances(state),
+        gossip_event=state.last_gossip,
+        why_chain=state.last_why_chain,
+        contradiction=state.last_contradiction,
+        accusation=state.last_accusation,
+        clues=_clue_objects(state),
+        location=(LOCATIONS_BY_ID[state.current_room].name
+                  if state.current_room in LOCATIONS_BY_ID else ""),
     )
 
 

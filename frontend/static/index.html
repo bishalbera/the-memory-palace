@@ -1,813 +1,170 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>A Death at Ravenwood Manor</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.29.2/cytoscape.min.js"></script>
-<style>
-  :root {
-    --bg:        #0d0d0f;
-    --panel:     #13131a;
-    --border:    #2a2a3a;
-    --accent:    #c9a84c;
-    --accent2:   #8b6f2e;
-    --text:      #d4c9b8;
-    --muted:     #6b6b7a;
-    --gm:        #b8860b;
-    --player:    #4a9eff;
-    --gossip:    #9b59b6;
-    --clue:      #27ae60;
-    --danger:    #e74c3c;
-    --warning:   #f39c12;
-    --memory:    #1a6b4a;
-  }
-
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: 'Georgia', serif;
-    height: 100vh;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-
-  /* ── Header ── */
-  header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 10px 20px;
-    background: var(--panel);
-    border-bottom: 1px solid var(--border);
-    flex-shrink: 0;
-  }
-
-  header h1 {
-    font-size: 1rem;
-    font-variant: small-caps;
-    letter-spacing: 0.15em;
-    color: var(--accent);
-  }
-
-  #status-bar {
-    font-family: monospace;
-    font-size: 0.78rem;
-    color: var(--muted);
-    display: flex;
-    gap: 16px;
-    align-items: center;
-  }
-
-  .stat { display: flex; gap: 4px; align-items: center; }
-  .stat-label { color: var(--muted); }
-  .stat-value { color: var(--text); font-weight: bold; }
-  .stat-value.highlight { color: var(--accent); }
-
-  #memory-flash {
-    color: var(--clue);
-    font-size: 0.72rem;
-    display: none;
-    animation: pulse 1s infinite;
-  }
-  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
-
-  /* ── Main layout ── */
-  main {
-    display: flex;
-    flex: 1;
-    overflow: hidden;
-  }
-
-  /* ── Chat panel ── */
-  #chat-panel {
-    width: 58%;
-    display: flex;
-    flex-direction: column;
-    border-right: 1px solid var(--border);
-  }
-
-  #messages {
-    flex: 1;
-    overflow-y: auto;
-    padding: 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-    scroll-behavior: smooth;
-  }
-
-  #messages::-webkit-scrollbar { width: 4px; }
-  #messages::-webkit-scrollbar-track { background: transparent; }
-  #messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
-
-  .msg {
-    max-width: 95%;
-    line-height: 1.6;
-    font-size: 0.9rem;
-    animation: fadeIn 0.3s ease;
-  }
-  @keyframes fadeIn { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:none} }
-
-  .msg-gm     { color: var(--text); }
-  .msg-player { color: var(--player); font-style: italic; align-self: flex-end; font-family: monospace; }
-  .msg-gossip { color: var(--gossip); font-size: 0.84rem; padding-left: 8px; border-left: 2px solid var(--gossip); }
-  .msg-clue   { color: var(--clue); font-size: 0.84rem; padding-left: 8px; border-left: 2px solid var(--clue); }
-  .msg-memory { color: var(--clue); font-size: 0.78rem; font-family: monospace; }
-  .msg-system { color: var(--muted); font-size: 0.8rem; font-family: monospace; }
-  .msg-error  { color: var(--danger); font-size: 0.84rem; }
-  .msg-victory{ color: var(--accent); font-size: 0.95rem; border-top: 1px solid var(--accent2); padding-top: 10px; }
-
-  .npc-name { color: var(--gm); font-weight: bold; }
-
-  /* ── Input area ── */
-  #input-area {
-    display: flex;
-    gap: 8px;
-    padding: 12px 16px;
-    border-top: 1px solid var(--border);
-    background: var(--panel);
-  }
-
-  #action-input {
-    flex: 1;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    color: var(--text);
-    font-family: monospace;
-    font-size: 0.9rem;
-    padding: 8px 12px;
-    outline: none;
-    transition: border-color 0.2s;
-  }
-  #action-input:focus { border-color: var(--accent2); }
-  #action-input::placeholder { color: var(--muted); }
-  #action-input:disabled { opacity: 0.4; }
-
-  #send-btn {
-    background: var(--accent2);
-    color: #000;
-    border: none;
-    border-radius: 4px;
-    padding: 8px 18px;
-    font-family: 'Georgia', serif;
-    font-size: 0.85rem;
-    cursor: pointer;
-    font-variant: small-caps;
-    letter-spacing: 0.05em;
-    transition: background 0.2s;
-  }
-  #send-btn:hover  { background: var(--accent); }
-  #send-btn:disabled { opacity: 0.4; cursor: default; }
-
-  /* ── Graph panel ── */
-  #graph-panel {
-    width: 42%;
-    display: flex;
-    flex-direction: column;
-    background: var(--panel);
-    position: relative;
-  }
-
-  #graph-header {
-    padding: 8px 14px;
-    font-family: monospace;
-    font-size: 0.75rem;
-    color: var(--muted);
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-
-  #graph-header span { color: var(--accent); font-variant: small-caps; letter-spacing: 0.1em; }
-
-  #cy {
-    flex: 1;
-    background: radial-gradient(ellipse at center, #15151f 0%, #0d0d0f 100%);
-  }
-
-  #graph-legend {
-    padding: 8px 14px;
-    display: flex;
-    gap: 12px;
-    flex-wrap: wrap;
-    border-top: 1px solid var(--border);
-    font-size: 0.72rem;
-    font-family: monospace;
-    color: var(--muted);
-  }
-
-  .legend-item {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-  }
-
-  .legend-dot {
-    width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
-  }
-  .legend-diamond {
-    width: 9px; height: 9px; transform: rotate(45deg); flex-shrink: 0;
-  }
-  .legend-square {
-    width: 9px; height: 9px; border-radius: 2px; flex-shrink: 0;
-  }
-
-  /* ── Case file overlay ── */
-  #case-overlay {
-    display: none;
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.85);
-    z-index: 100;
-    overflow-y: auto;
-    padding: 40px 20px;
-  }
-
-  #case-file {
-    max-width: 680px;
-    margin: 0 auto;
-    background: var(--panel);
-    border: 1px solid var(--accent2);
-    border-radius: 6px;
-    padding: 32px;
-  }
-
-  #case-file h2 {
-    font-variant: small-caps;
-    letter-spacing: 0.15em;
-    color: var(--accent);
-    margin-bottom: 4px;
-    font-size: 1.1rem;
-  }
-
-  #case-file .divider {
-    border: none;
-    border-top: 1px solid var(--border);
-    margin: 16px 0;
-  }
-
-  .evidence-section h3 {
-    font-variant: small-caps;
-    color: var(--muted);
-    font-size: 0.8rem;
-    letter-spacing: 0.12em;
-    margin-bottom: 8px;
-  }
-
-  .evidence-item {
-    display: flex;
-    gap: 10px;
-    align-items: flex-start;
-    margin-bottom: 6px;
-    font-size: 0.85rem;
-    line-height: 1.5;
-  }
-
-  .ev-check { color: var(--clue); flex-shrink: 0; }
-  .ev-miss  { color: var(--muted); flex-shrink: 0; }
-
-  .stat-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-    font-family: monospace;
-    font-size: 0.84rem;
-  }
-
-  .stat-row { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid var(--border); }
-  .stat-row .k { color: var(--muted); }
-  .stat-row .v { color: var(--text); }
-
-  #rating-badge {
-    text-align: center;
-    margin: 20px 0 8px;
-    font-size: 1.3rem;
-    font-variant: small-caps;
-    color: var(--accent);
-    letter-spacing: 0.1em;
-  }
-
-  #close-case {
-    display: block;
-    margin: 20px auto 0;
-    background: var(--accent2);
-    color: #000;
-    border: none;
-    border-radius: 4px;
-    padding: 10px 28px;
-    font-family: 'Georgia', serif;
-    font-size: 0.9rem;
-    font-variant: small-caps;
-    letter-spacing: 0.08em;
-    cursor: pointer;
-  }
-  #close-case:hover { background: var(--accent); }
-
-  /* ── Loading spinner ── */
-  #thinking {
-    display: none;
-    color: var(--muted);
-    font-family: monospace;
-    font-size: 0.8rem;
-    padding: 4px 16px;
-    animation: pulse 1.2s infinite;
-  }
-</style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>The Memory Palace — A Death at Ravenwood Manor</title>
+<meta name="description" content="A candlelit detective investigation. Name the killer before the manor turns against you.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=IM+Fell+English:ital@0;1&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<!-- Cytoscape: existing project dependency, restyled into the corkboard -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.30.2/cytoscape.min.js"></script>
 </head>
 <body>
+<div id="app">
+  <div class="grain" aria-hidden="true"></div>
 
-<header>
-  <h1>⚰ A Death at Ravenwood Manor</h1>
-  <div id="status-bar">
-    <div class="stat">
-      <span class="stat-label">turn</span>
-      <span class="stat-value" id="stat-turn">0</span>
-    </div>
-    <div class="stat">
-      <span class="stat-label">facts</span>
-      <span class="stat-value" id="stat-facts">0/22</span>
-    </div>
-    <div class="stat">
-      <span class="stat-label">clues</span>
-      <span class="stat-value" id="stat-clues">0/8</span>
-    </div>
-    <div id="memory-flash">⟳ consolidating memory…</div>
-  </div>
-</header>
+  <!-- ═══════════ TITLE / COLD OPEN ═══════════ -->
+  <section id="screen-title" class="screen active" aria-label="Title">
+    <svg class="title-crest" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 2c-.6 3-2 4.5-2 7 0 1.6 1 2.8 2 3.4 1-.6 2-1.8 2-3.4 0-2.5-1.4-4-2-7z" fill="currentColor"/>
+      <path d="M9 13.5c0 2 1.3 3.3 3 3.3s3-1.3 3-3.3" stroke="currentColor" stroke-width="1" opacity=".5"/>
+      <rect x="9.4" y="16.5" width="5.2" height="1.1" rx=".5" fill="currentColor" opacity=".7"/>
+      <rect x="8.6" y="18" width="6.8" height="4" rx="1" fill="currentColor" opacity=".22"/>
+    </svg>
+    <p class="title-kicker">Cognee presents · A Knowledge-Graph Mystery</p>
+    <h1 class="title-main">The Memory Palace</h1>
+    <p class="title-sub">A Death at Ravenwood Manor</p>
+    <div class="title-rule"></div>
+    <button class="begin-btn" id="btn-begin">Begin the Investigation</button>
+    <p class="title-foot">Eleven guests. One poured the brandy. The manor remembers everything.</p>
+  </section>
 
-<main>
-  <div id="chat-panel">
-    <div id="messages"></div>
-    <div id="thinking">The GM is thinking…</div>
-    <div id="input-area">
-      <input id="action-input" type="text" placeholder="Talk to someone · Search somewhere · Go to a room · Accuse [name]…" autocomplete="off" />
-      <button id="send-btn">Investigate</button>
+  <!-- ═══════════ MURDER INTRO ═══════════ -->
+  <section id="screen-intro" class="screen" aria-label="The crime">
+    <div class="intro-stage">
+      <p class="intro-scene" id="intro-scene"></p>
+      <div class="intro-suspects" id="intro-suspects" aria-hidden="true"></div>
+      <p class="intro-caption" id="intro-caption">Eleven remain beneath this roof. One of them is a murderer.</p>
+      <button class="intro-continue" id="btn-enter">Enter the Study &rsaquo;</button>
     </div>
-  </div>
+  </section>
 
-  <div id="graph-panel">
-    <div id="graph-header">
-      <span>Knowledge Graph</span>
-      <span id="graph-count" style="color:var(--muted)">0 nodes</span>
-    </div>
-    <div id="cy"></div>
-    <div id="graph-legend">
-      <div class="legend-item">
-        <div class="legend-dot" style="background:#4a90d9"></div> Character
-      </div>
-      <div class="legend-item">
-        <div class="legend-square" style="background:#7b4fa6"></div> Location
-      </div>
-      <div class="legend-item">
-        <div class="legend-diamond" style="background:#e74c3c"></div> Solution Fact
-      </div>
-      <div class="legend-item">
-        <div class="legend-diamond" style="background:#555"></div> Fact
-      </div>
-    </div>
-  </div>
-</main>
+  <!-- ═══════════ PLAY VIEW ═══════════ -->
+  <section id="screen-play" class="screen" aria-label="Investigation">
+    <div class="hud">
+      <header class="casebar">
+        <div class="casebar-title">
+          <b>A Death at Ravenwood Manor</b>
+          <span id="cb-location">The Study</span>
+        </div>
+        <div class="casebar-spacer"></div>
+        <div class="hourline" title="The hour grows late">
+          <span class="lbl">The hour grows late</span>
+          <div class="hour-track">
+            <div class="hour-fill" id="hour-fill" style="width:8%"></div>
+            <div class="hour-moon" id="hour-moon" style="left:8%"></div>
+          </div>
+          <span class="lbl" id="cb-hour">10:15</span>
+        </div>
+        <div class="casebar-stats">
+          <div class="stat"><b id="cb-turns">0</b><span>Turns</span></div>
+          <div class="stat"><b id="cb-clues">0</b><span>Clues</span></div>
+          <div class="stat"><b id="cb-facts">0</b><span>Facts</span></div>
+        </div>
+      </header>
 
-<!-- Case file overlay (shown on victory) -->
-<div id="case-overlay">
-  <div id="case-file">
-    <h2>Case File — A Death at Ravenwood Manor</h2>
-    <p style="color:var(--muted);font-size:0.82rem;margin-top:4px">Ravenwood Manor · October 1899</p>
-    <hr class="divider" />
-    <div id="cf-epilogue" style="font-style:italic;color:var(--text);font-size:0.88rem;line-height:1.7;margin-bottom:16px"></div>
-    <hr class="divider" />
-    <div id="cf-evidence"></div>
-    <hr class="divider" />
-    <h3 style="font-variant:small-caps;color:var(--muted);font-size:0.8rem;letter-spacing:.1em;margin-bottom:12px">Investigation Summary</h3>
-    <div class="stat-grid" id="cf-stats"></div>
-    <div id="rating-badge"></div>
-    <button id="close-case">Close Dossier</button>
+      <div class="play-grid" id="play-grid">
+        <!-- PLAY COLUMN -->
+        <main class="play-column">
+          <div class="location-tab" id="location-tab">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C8 2 5 5 5 9c0 5 7 13 7 13s7-8 7-13c0-4-3-7-7-7zm0 9.5A2.5 2.5 0 1112 6.5a2.5 2.5 0 010 5z"/></svg>
+            <span id="location-name">The Study</span>
+          </div>
+          <div class="journal-wrap paper">
+            <div class="journal" id="journal" role="log" aria-live="polite" aria-label="Case journal"></div>
+          </div>
+          <div class="action-line-wrap">
+            <div class="quick-row" id="quick-row"></div>
+            <form class="action-line" id="action-form">
+              <svg class="nib" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 21l4-1 12.3-12.3-3-3L4 17l-1 4zm16.7-15.3l1.6-1.6a1 1 0 000-1.4l-1.6-1.6a1 1 0 00-1.4 0l-1.6 1.6 3 3z"/></svg>
+              <textarea class="action-input" id="action-input" rows="1" placeholder="What do you do, Detective?" autocomplete="off"></textarea>
+              <button class="submit-move" id="submit-move" type="submit" title="Take your move" aria-label="Take your move">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+              </button>
+            </form>
+          </div>
+        </main>
+
+        <!-- CASE BOARD -->
+        <aside class="case-board" id="case-board" aria-label="Case board">
+          <div class="drawer-grabber" id="drawer-grabber"></div>
+          <div class="board-tabs" role="tablist">
+            <button class="board-tab active" data-tab="suspects" role="tab">Suspects</button>
+            <button class="board-tab" data-tab="evidence" role="tab">Evidence <span class="badge" id="ev-badge" hidden>0</span></button>
+            <button class="board-tab" data-tab="graph" role="tab">The Board</button>
+          </div>
+          <div class="board-panels">
+            <div class="board-panel active" data-panel="suspects">
+              <div class="dossier-grid" id="dossier-grid"></div>
+            </div>
+            <div class="board-panel" data-panel="evidence">
+              <div class="evidence-tray" id="evidence-tray"></div>
+            </div>
+            <div class="board-panel" data-panel="graph">
+              <div class="corkboard-wrap">
+                <button class="truegraph-btn" id="truegraph-btn" title="Reveal every hidden thread">View the true case graph</button>
+                <div id="cy"></div>
+                <div class="corkboard-legend">
+                  <span class="lg"><span class="sw" style="background:#b8892f"></span>Known thread</span>
+                  <span class="lg"><span class="sw" style="background:#a52a1e;box-shadow:0 0 6px #a52a1e"></span>Red string</span>
+                  <span class="lg"><span class="sw" style="background:#5a4a38;border:1px dashed #8a8272"></span>Hidden</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </div>
+
+    <!-- mobile board toggle -->
+    <button class="board-toggle" id="board-toggle">The Case Board</button>
+
+    <!-- in-world toasts -->
+    <div class="toast-rail" id="toast-rail" aria-live="polite"></div>
+    <!-- in-world error -->
+    <div class="error-banner" id="error-banner" role="alert">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2L1 21h22L12 2zm0 6l7 12H5l7-12zm-1 3v4h2v-4h-2zm0 5v2h2v-2h-2z"/></svg>
+      <span id="error-text">The candle gutters — the manor does not answer.</span>
+      <button id="error-retry">Try again</button>
+    </div>
+  </section>
+
+  <!-- ═══════════ ACCUSATION ═══════════ -->
+  <section id="screen-accuse" class="screen" aria-label="The accusation">
+    <div id="accuse-choose">
+      <h2 class="accuse-title">Name the Killer</h2>
+      <p class="accuse-sub">You may accuse only once. Be certain.</p>
+      <div class="accuse-grid" id="accuse-grid"></div>
+      <p class="accuse-warn">Accuse the wrong soul and the true killer walks free by morning.</p>
+      <button class="accuse-cancel" id="accuse-cancel">Not yet — return to the investigation</button>
+    </div>
+    <div id="accuse-climax" style="display:none">
+      <h2 class="accuse-title" id="climax-name">The case against…</h2>
+      <p class="accuse-sub">The threads draw together.</p>
+      <div class="climax" id="climax-steps"></div>
+    </div>
+  </section>
+
+  <!-- ═══════════ VERDICT ═══════════ -->
+  <section id="screen-verdict" class="screen" aria-label="Verdict">
+    <div class="verdict-stamp" id="verdict-stamp">VERDICT</div>
+    <h2 class="verdict-headline" id="verdict-headline"></h2>
+    <p class="verdict-prose" id="verdict-prose"></p>
+    <div class="verdict-actions">
+      <button class="verdict-btn" id="verdict-review">Review the Board</button>
+      <button class="verdict-btn" id="verdict-restart">A New Case</button>
+    </div>
+  </section>
+
+  <!-- ═══════════ DOSSIER MODAL ═══════════ -->
+  <div class="overlay" id="dossier-overlay">
+    <div class="dossier-modal paper" id="dossier-modal" role="dialog" aria-modal="true"></div>
   </div>
 </div>
 
-<script>
-// ═══════════════════════════════════════════════════════
-//  Ravenwood Manor — frontend logic
-// ═══════════════════════════════════════════════════════
-
-let sessionId = null;
-let ws = null;
-
-const $msgs    = document.getElementById('messages');
-const $input   = document.getElementById('action-input');
-const $send    = document.getElementById('send-btn');
-const $think   = document.getElementById('thinking');
-const $flash   = document.getElementById('memory-flash');
-const $turn    = document.getElementById('stat-turn');
-const $facts   = document.getElementById('stat-facts');
-const $clues   = document.getElementById('stat-clues');
-const $gcount  = document.getElementById('graph-count');
-
-// ── Cytoscape setup ───────────────────────────────────
-
-const cy = cytoscape({
-  container: document.getElementById('cy'),
-  elements: [],
-  style: [
-    // Characters
-    {
-      selector: 'node[type="character"]',
-      style: {
-        'background-color': '#4a90d9',
-        'border-color': '#2a6ab0',
-        'border-width': 2,
-        'label': 'data(label)',
-        'color': '#fff',
-        'font-size': '11px',
-        'font-family': 'Georgia, serif',
-        'text-wrap': 'wrap',
-        'text-max-width': '80px',
-        'text-valign': 'center',
-        'text-halign': 'center',
-        'width': 72,
-        'height': 72,
-        'shape': 'ellipse',
-        'text-outline-width': 1,
-        'text-outline-color': '#1a3a6a',
-      }
-    },
-    // Locations
-    {
-      selector: 'node[type="location"]',
-      style: {
-        'background-color': '#3a2a5e',
-        'border-color': '#7b4fa6',
-        'border-width': 2,
-        'label': 'data(label)',
-        'color': '#ccc',
-        'font-size': '10px',
-        'font-family': 'Georgia, serif',
-        'text-wrap': 'wrap',
-        'text-max-width': '70px',
-        'text-valign': 'center',
-        'width': 68,
-        'height': 34,
-        'shape': 'rectangle',
-      }
-    },
-    // Solution facts
-    {
-      selector: 'node[type="fact"][solution="true"]',
-      style: {
-        'background-color': '#8b1a1a',
-        'border-color': '#e74c3c',
-        'border-width': 2,
-        'label': 'data(label)',
-        'color': '#fcc',
-        'font-size': '9px',
-        'font-family': 'monospace',
-        'text-wrap': 'wrap',
-        'text-max-width': '90px',
-        'text-valign': 'center',
-        'width': 55,
-        'height': 55,
-        'shape': 'diamond',
-        'text-outline-width': 1,
-        'text-outline-color': '#4a0000',
-      }
-    },
-    // Background facts
-    {
-      selector: 'node[type="fact"][solution="false"]',
-      style: {
-        'background-color': '#2a2a2a',
-        'border-color': '#555',
-        'border-width': 1,
-        'label': 'data(label)',
-        'color': '#888',
-        'font-size': '9px',
-        'font-family': 'monospace',
-        'text-wrap': 'wrap',
-        'text-max-width': '90px',
-        'text-valign': 'center',
-        'width': 48,
-        'height': 48,
-        'shape': 'diamond',
-      }
-    },
-    // Edges
-    {
-      selector: 'edge',
-      style: {
-        'line-color': '#333',
-        'target-arrow-color': '#444',
-        'target-arrow-shape': 'triangle',
-        'curve-style': 'bezier',
-        'label': 'data(label)',
-        'color': '#555',
-        'font-size': '8px',
-        'font-family': 'monospace',
-        'text-rotation': 'autorotate',
-        'edge-text-rotation': 'autorotate',
-        'width': 1,
-        'arrow-scale': 0.6,
-        'opacity': 0.7,
-      }
-    },
-    // Disclosed (fact) edges
-    {
-      selector: 'edge[label="disclosed"]',
-      style: {
-        'line-color': '#2a5a2a',
-        'target-arrow-color': '#2a5a2a',
-        'line-style': 'dashed',
-        'opacity': 0.5,
-      }
-    },
-    // Selected
-    {
-      selector: ':selected',
-      style: {
-        'border-color': '#c9a84c',
-        'border-width': 3,
-      }
-    },
-  ],
-  layout: { name: 'preset' },
-  userZoomingEnabled: true,
-  userPanningEnabled: true,
-  minZoom: 0.3,
-  maxZoom: 3,
-});
-
-// Tooltip on node hover
-const tooltip = document.createElement('div');
-tooltip.style.cssText = `
-  position:fixed; background:#1a1a2a; border:1px solid #444; border-radius:4px;
-  padding:6px 10px; font-size:0.75rem; font-family:monospace; color:#ccc;
-  pointer-events:none; display:none; max-width:280px; z-index:50; line-height:1.5;
-`;
-document.body.appendChild(tooltip);
-
-cy.on('mouseover', 'node', (evt) => {
-  const d = evt.target.data();
-  let content = `<strong style="color:#c9a84c">${d.label}</strong>`;
-  if (d.sublabel) content += `<br/><em style="color:#888">${d.sublabel}</em>`;
-  if (d.full)     content += `<br/><span style="color:#aaa">${d.full}</span>`;
-  tooltip.innerHTML = content;
-  tooltip.style.display = 'block';
-});
-cy.on('mousemove', (evt) => {
-  tooltip.style.left = (evt.originalEvent.clientX + 14) + 'px';
-  tooltip.style.top  = (evt.originalEvent.clientY + 14) + 'px';
-});
-cy.on('mouseout', 'node', () => { tooltip.style.display = 'none'; });
-
-
-// ── Graph update ──────────────────────────────────────
-
-function applyGraphDelta(elements) {
-  if (!elements || !elements.length) return;
-  elements.forEach(el => {
-    if (!cy.getElementById(el.data.id).length) {
-      cy.add(el);
-    }
-  });
-  // Re-run layout only on nodes (preserve positions for existing nodes)
-  cy.layout({
-    name: 'cose',
-    animate: true,
-    animationDuration: 600,
-    randomize: false,
-    nodeRepulsion: 8000,
-    idealEdgeLength: 120,
-    edgeElasticity: 100,
-    gravity: 0.4,
-    numIter: 1000,
-    initialTemp: 200,
-    coolingFactor: 0.95,
-    fit: true,
-    padding: 30,
-  }).run();
-  $gcount.textContent = cy.nodes().length + ' nodes';
-}
-
-
-// ── Message rendering ─────────────────────────────────
-
-function addMsg(html, cls) {
-  const div = document.createElement('div');
-  div.className = 'msg ' + cls;
-  div.innerHTML = html;
-  $msgs.appendChild(div);
-  $msgs.scrollTop = $msgs.scrollHeight;
-  return div;
-}
-
-function escHtml(s) {
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
-function renderGm(text) {
-  // Highlight NPC name: "Thomas Harrington: "..." → bold name + quotes
-  return escHtml(text)
-    .replace(/^([A-Z][a-z]+ [A-Z][a-z]+|[A-Z][a-z]+ [A-Z]\. [A-Z][a-z]+|Colonel [A-Za-z ]+|Dr\. [A-Za-z ]+|Father [A-Za-z ]+|Lady [A-Za-z ]+|Mrs\. [A-Za-z ]+): "/,
-      '<span class="npc-name">$1:</span> "')
-    .replace(/\n/g, '<br/>');
-}
-
-function updateStats(stats, turn) {
-  $turn.textContent = turn;
-  $facts.textContent = stats.facts + '/' + stats.total_facts;
-  $clues.textContent = stats.clues + '/' + stats.total_clues;
-  if (stats.facts > 0) $facts.classList.add('highlight');
-}
-
-
-// ── Case file rendering ───────────────────────────────
-
-function showCaseFile(cf, epilogue) {
-  document.getElementById('cf-epilogue').innerHTML = escHtml(epilogue || '').replace(/\n/g,'<br/>');
-
-  const sections = [
-    { label: 'Motive', key: 'motive' },
-    { label: 'Means',  key: 'means'  },
-    { label: 'Opportunity', key: 'opportunity' },
-  ];
-
-  let evHtml = '';
-  sections.forEach(s => {
-    evHtml += `<div class="evidence-section" style="margin-bottom:14px">
-      <h3>${s.label}</h3>`;
-    (cf[s.key] || []).forEach(item => {
-      const cls  = item.found ? 'ev-check' : 'ev-miss';
-      const mark = item.found ? '✓' : '✗';
-      evHtml += `<div class="evidence-item">
-        <span class="${cls}">${mark}</span>
-        <span style="color:${item.found ? 'var(--text)' : 'var(--muted)'}">${escHtml(item.statement)}</span>
-      </div>`;
-    });
-    evHtml += '</div>';
-  });
-  document.getElementById('cf-evidence').innerHTML = evHtml;
-
-  const stats = [
-    ['Turns taken',    cf.turns],
-    ['Facts found',    `${cf.facts_found}/${cf.total_facts}`],
-    ['Clues found',    `${cf.clues_found}/${cf.total_clues}`],
-    ['Rooms explored', `${cf.rooms}/${cf.total_rooms}`],
-    ['Solution chain', `${cf.chain_found}/${cf.chain_total} links`],
-  ];
-  document.getElementById('cf-stats').innerHTML = stats.map(([k,v]) =>
-    `<div class="stat-row"><span class="k">${k}</span><span class="v">${v}</span></div>`
-  ).join('');
-
-  document.getElementById('rating-badge').textContent = '★ ' + cf.rating + ' ★';
-  document.getElementById('case-overlay').style.display = 'block';
-}
-
-document.getElementById('close-case').addEventListener('click', () => {
-  document.getElementById('case-overlay').style.display = 'none';
-});
-
-
-// ── Session + WebSocket ───────────────────────────────
-
-async function startGame() {
-  setLoading(true);
-  addMsg('Arriving at Ravenwood Manor on a cold October evening…', 'msg-system');
-
-  const resp = await fetch('/api/start', { method: 'POST' });
-  const data = await resp.json();
-  sessionId = data.session_id;
-
-  // Display opening narration
-  addMsg(renderGm(data.opening), 'msg-gm');
-
-  // Seed initial graph elements
-  applyGraphDelta(data.graph_elements || []);
-
-  // Open WebSocket
-  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  ws = new WebSocket(`${proto}://${location.host}/ws/${sessionId}`);
-
-  ws.onmessage = (evt) => {
-    const msg = JSON.parse(evt.data);
-    handleMessage(msg);
-  };
-
-  ws.onclose = () => {
-    addMsg('Connection closed. Refresh to start a new investigation.', 'msg-system');
-    setLoading(false, true);
-  };
-
-  ws.onerror = () => {
-    addMsg('Connection error. Please refresh.', 'msg-error');
-    setLoading(false, true);
-  };
-
-  ws.onopen = () => {
-    setLoading(false);
-    $input.focus();
-  };
-}
-
-function handleMessage(msg) {
-  setLoading(false);
-
-  if (msg.type === 'error') {
-    addMsg(escHtml(msg.message), 'msg-error');
-    return;
-  }
-
-  if (msg.type !== 'turn_result') return;
-
-  // Main response
-  if (!msg.is_free) {
-    addMsg(renderGm(msg.response), 'msg-gm');
-  } else {
-    // Help/notebook/status rendered as system text
-    addMsg('<pre style="white-space:pre-wrap;font-family:monospace;font-size:0.78rem;color:var(--muted)">' + escHtml(msg.response) + '</pre>', 'msg-system');
-  }
-
-  // Gossip
-  if (msg.gossip) {
-    addMsg('🕊 ' + escHtml(msg.gossip), 'msg-gossip');
-  }
-
-  // Contradictions
-  (msg.contradictions || []).forEach(c => {
-    addMsg('🔎 ' + escHtml(c), 'msg-clue');
-  });
-
-  // Memory consolidation flash
-  if (msg.improved) {
-    $flash.style.display = 'block';
-    setTimeout(() => { $flash.style.display = 'none'; }, 3000);
-    addMsg('[memory] Cognee consolidating discoveries into world graph…', 'msg-memory');
-  }
-
-  // Stats
-  if (msg.stats && !msg.is_free) {
-    updateStats(msg.stats, msg.turn);
-  }
-
-  // Graph delta
-  applyGraphDelta(msg.graph_delta || []);
-
-  // Endgame
-  if (msg.game_over) {
-    if (msg.epilogue) {
-      addMsg(renderGm(msg.epilogue), 'msg-victory');
-    }
-    setTimeout(() => {
-      showCaseFile(msg.case_file, msg.epilogue);
-    }, 1500);
-    setLoading(false, true);
-    return;
-  }
-
-  if (msg.intent_type === 'quit') {
-    setLoading(false, true);
-  }
-}
-
-
-// ── Input handling ────────────────────────────────────
-
-function sendAction() {
-  const text = $input.value.trim();
-  if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
-
-  addMsg('❯ ' + escHtml(text), 'msg-player');
-  $input.value = '';
-  setLoading(true);
-  ws.send(JSON.stringify({ action: text }));
-}
-
-$send.addEventListener('click', sendAction);
-$input.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    sendAction();
-  }
-});
-
-function setLoading(on, disable=false) {
-  $think.style.display = on ? 'block' : 'none';
-  $input.disabled  = on || disable;
-  $send.disabled   = on || disable;
-  if (!on && !disable) $input.focus();
-}
-
-
-// ── Boot ──────────────────────────────────────────────
-
-startGame().catch(err => {
-  addMsg('Failed to connect: ' + err.message + '. Is the server running?', 'msg-error');
-  setLoading(false, true);
-});
-</script>
+<script type="module" src="app.js"></script>
 </body>
 </html>
