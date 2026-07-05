@@ -606,15 +606,29 @@ $("#dossier-overlay").addEventListener("click", (e) => {
 
 /* ═══════════ QUICK ACTIONS ═══════════ */
 const QUICK = [
-  { label: "Search the study", text: "search the study" },
-  { label: "Ask the butler", text: "ask Mr. Harrington what he saw" },
   {
-    label: "Confront the Colonel",
-    text: "confront Colonel Ashworth about the ledger",
+    label: "Examine the brandy glass",
+    text: "examine the brandy glass in the study",
   },
   {
-    label: "Why won\u2019t the maid meet my eye?",
-    text: "why does the maid distrust me",
+    label: "Ask Sophie what she saw",
+    text: "ask Sophie Calloway what she saw from the conservatory",
+  },
+  {
+    label: "Accuse James Calloway",
+    text: "accuse James Calloway of the murder in front of everyone",
+  },
+  {
+    label: "Why is Sophie wary of me?",
+    text: "why is Sophie reluctant to talk to me",
+  },
+  {
+    label: "Search Ashworth\u2019s room",
+    text: "search Colonel Ashworth\u2019s guest room",
+  },
+  {
+    label: "Search the dining room",
+    text: "search the dining room for the empty place setting",
   },
 ];
 function buildQuickActions() {
