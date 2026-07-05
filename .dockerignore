@@ -1,0 +1,13 @@
+.venv/
+.git/
+.cognee_system/
+.cognee_data/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.log
+.env
+scripts/.artifacts/
+node_modules/
+.pytest_cache/
+.DS_Store

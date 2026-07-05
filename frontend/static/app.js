@@ -41,8 +41,12 @@ function portraitSVG(hue, seed = 0) {
 
 /* ═══════════ TITLE ═══════════ */
 $("#btn-begin").addEventListener("click", async () => {
-  state = await beginInvestigation();
-  runIntro();
+  try {
+    state = await beginInvestigation();
+    runIntro();
+  } catch (err) {
+    showError(null, err && err.message, false);
+  }
 });
 
 /* ═══════════ MURDER INTRO (cinematic, paced) ═══════════ */
@@ -99,8 +103,12 @@ async function runIntro() {
   contEl.classList.add("show");
 }
 $("#btn-enter").addEventListener("click", async () => {
-  state = await enterManor();
-  enterPlay();
+  try {
+    state = await enterManor();
+    enterPlay();
+  } catch (err) {
+    showError(null, err && err.message, false);
+  }
 });
 
 /* ── typewriter into an element (returns when done) ── */
@@ -704,7 +712,8 @@ async function doAction(text) {
     if (state.contradiction) await playContradiction(state.contradiction);
   } catch (err) {
     beat.remove();
-    showError(text);
+    if (err && err.kind === "rate_limit") showError(null, err.message, false);
+    else showError(text);
   }
   busy = false;
   setInputEnabled(true);
@@ -724,14 +733,26 @@ function showBreath() {
   j.scrollTop = j.scrollHeight;
   return b;
 }
-function showError(lastText) {
+function showError(lastText, message, canRetry = true) {
   const banner = $("#error-banner");
+  $("#error-text").textContent =
+    message || "The candle gutters — the manor does not answer.";
+  const retry = $("#error-retry");
+  if (canRetry && lastText) {
+    retry.style.display = "";
+    retry.onclick = () => {
+      banner.classList.remove("show");
+      doAction(lastText);
+    };
+  } else {
+    retry.style.display = "none";
+  }
   banner.classList.add("show");
-  $("#error-retry").onclick = () => {
-    banner.classList.remove("show");
-    doAction(lastText);
-  };
-  setTimeout(() => banner.classList.remove("show"), 6000);
+  clearTimeout(showError._t);
+  showError._t = setTimeout(
+    () => banner.classList.remove("show"),
+    canRetry ? 6000 : 9000,
+  );
 }
 
 /* ═══════════ ACCUSATION ═══════════ */
@@ -867,6 +888,10 @@ $("#truegraph-btn").addEventListener("click", () => {
 
 /* ═══════════ BOOT ═══════════ */
 (async function boot() {
-  state = await getInitialState();
+  try {
+    state = await getInitialState();
+  } catch (err) {
+    showError(null, err && err.message, false);
+  }
   showScreen("screen-title");
 })();

@@ -8,13 +8,14 @@ from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent.parent / ".env")
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 import game.gm as gm
 from game.loop import process_turn, HELP_TEXT
 from api.session import new_session, get_session, update_graph, full_graph, build_case_file
+from api import ratelimit
 
 # ── App setup ─────────────────────────────────────────────────────────────────
 
@@ -36,7 +37,10 @@ async def health():
 
 
 @app.post("/api/start")
-async def start_game():
+async def start_game(request: Request):
+    ok, reason = ratelimit.allow_session(ratelimit.client_ip(request))
+    if not ok:
+        return JSONResponse({"error": reason}, status_code=429)
     sid, state, graph = new_session()
     opening = await gm.narrate_opening()
     elements = update_graph(state, graph)
@@ -73,12 +77,26 @@ async def ws_game(websocket: WebSocket, session_id: str):
         return
 
     state, graph = pair
+    ip = ratelimit.client_ip(websocket)
 
     try:
         while True:
             data = await websocket.receive_json()
             raw = (data.get("action") or "").strip()
             if not raw:
+                continue
+
+            if state.turn >= ratelimit.MAX_TURNS_PER_SESSION:
+                await websocket.send_json({
+                    "type": "error",
+                    "kind": "rate_limit",
+                    "message": "This case has run its course. Refresh to begin a new investigation.",
+                })
+                continue
+
+            ok, reason = ratelimit.allow_action(ip)
+            if not ok:
+                await websocket.send_json({"type": "error", "kind": "rate_limit", "message": reason})
                 continue
 
             result = await process_turn(state, raw)

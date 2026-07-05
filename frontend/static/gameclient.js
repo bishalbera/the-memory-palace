@@ -382,8 +382,7 @@ function sendAction(text) {
 
 // ── Public API ──────────────────────────────────────────────────────────────
 
-export async function getInitialState() {
-  S = freshState();
+async function startSession() {
   if (ws) {
     try {
       ws.close();
@@ -391,10 +390,24 @@ export async function getInitialState() {
     ws = null;
   }
   const res = await fetch("/api/start", { method: "POST" });
-  if (!res.ok) throw new Error("The manor would not open its doors.");
+  if (!res.ok) {
+    let m = "The manor would not open its doors.";
+    try {
+      m = (await res.json()).error || m;
+    } catch {}
+    const e = new Error(m);
+    e.kind = res.status === 429 ? "rate_limit" : "error";
+    throw e;
+  }
   const data = await res.json();
   sessionId = data.session_id;
   opening = cleanNarration(data.opening);
+}
+
+export async function getInitialState() {
+  S = freshState();
+  sessionId = null;
+  await startSession();
   return snapshot();
 }
 
@@ -405,6 +418,7 @@ export async function beginInvestigation() {
 }
 
 export async function enterManor() {
+  if (!sessionId) await startSession(); // recover if the first start was rate-limited
   // Open the turn-loop socket right before play so it isn't idle through the intro.
   await connectWS(sessionId);
   S.phase = "investigating";
@@ -424,7 +438,11 @@ export async function submitAction(text) {
   S.contradiction = null;
 
   const msg = await sendAction(text);
-  if (msg.type === "error") throw new Error(msg.message || "The manor faltered.");
+  if (msg.type === "error") {
+    const e = new Error(msg.message || "The manor faltered.");
+    e.kind = msg.kind || "error";
+    throw e;
+  }
   applyTurn(msg);
   return snapshot();
 }

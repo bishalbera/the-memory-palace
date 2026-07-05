@@ -453,7 +453,7 @@ button{font-family:inherit;color:inherit;cursor:pointer;border:none;background:n
 .thinking-overlay{position:absolute;inset:0;z-index:30;display:none;align-items:center;justify-content:center;pointer-events:none}
 .thinking-overlay.active{display:flex}
 .error-banner{
-  position:absolute;bottom:var(--s-6);left:50%;transform:translateX(-50%);z-index:55;display:none;
+  position:fixed;bottom:var(--s-6);left:50%;transform:translateX(-50%);z-index:120;display:none;max-width:90vw;
   font-family:var(--f-narr);font-style:italic;color:var(--paper-100);
   padding:var(--s-3) var(--s-5);border-radius:var(--radius);align-items:center;gap:var(--s-3);
   background:linear-gradient(180deg,rgba(58,15,12,.96),rgba(30,10,8,.96));border:1px solid var(--blood-500);
