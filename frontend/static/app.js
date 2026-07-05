@@ -5,7 +5,7 @@ import {
   enterManor,
   submitAction,
   WORLD,
-} from "./gameClient.js";
+} from "./gameclient.js";
 
 const REDUCED = window.matchMedia("(prefers-reduced-motion:reduce)").matches;
 const $ = (s, r = document) => r.querySelector(s);
