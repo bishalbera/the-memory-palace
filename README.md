@@ -17,7 +17,6 @@ pinned: false
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![Cognee](https://img.shields.io/badge/Memory-Cognee-6E56CF)](https://www.cognee.ai/)
-[![Hackathon](https://img.shields.io/badge/WeMakeDevs-The%20Hangover%20Part%20AI-E4405F)](https://www.wemakedevs.org/hackathons/cognee)
 
 <em>An AI Game Master that runs a living murder mystery — where a single word to the wrong suspect can turn the whole manor against you three rooms later.</em>
 
